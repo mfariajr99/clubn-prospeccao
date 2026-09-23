@@ -1,0 +1,29 @@
+# Render Blueprint: cria o serviço web + disco persistente automaticamente.
+# No Render: New > Blueprint > escolha este repositório.
+services:
+  - type: web
+    runtime: node
+    name: clubn-prospeccao
+    region: virginia
+    plan: 0.5c-512mb
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    disk:
+      name: clubn-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_FILE
+        value: /opt/render/project/src/data/clubn.db
+      - key: PREVIEW_STORAGE_DIR
+        value: /opt/render/project/src/data/screenshots
+      - key: PREVIEW_SCREENSHOTS
+        value: "off"
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: APP_PASSWORD
+        sync: false
