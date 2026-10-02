@@ -14,7 +14,27 @@ const previews = new PreviewService(db, {
   screenshotter: screenshotsEnabled() ? createPlaywrightScreenshotter() : null,
 });
 
-const app = createApp({ db, previews, staticDir: path.resolve(process.cwd(), "dist") });
+// Each client account has its own database file next to the main one
+// (on Render: inside the persistent disk), so client data never mixes.
+const mainFile = defaultDbFile();
+const tenantDbs: { close(): void }[] = [];
+const app = createApp({
+  db,
+  previews,
+  staticDir: path.resolve(process.cwd(), "dist"),
+  openTenant: ({ id: accountId, storageKey }) => {
+    const file = mainFile === ":memory:" ? ":memory:" : path.join(path.dirname(mainFile), "accounts", `cliente-${accountId}-${storageKey}.db`);
+    const tdb = openDatabase(file);
+    tenantDbs.push(tdb);
+    return {
+      db: tdb,
+      previews: new PreviewService(tdb, {
+        storageDir: path.join(storageDir, `cliente-${accountId}-${storageKey}`),
+        screenshotter: screenshotsEnabled() ? createPlaywrightScreenshotter() : null,
+      }),
+    };
+  },
+});
 const port = Number(process.env.PORT ?? 3333);
 const server = app.listen(port, () => {
   console.log(`Club'n API em http://localhost:${port} (capturas visuais: ${screenshotsEnabled() ? "ativadas" : "desativadas"})`);
@@ -22,6 +42,7 @@ const server = app.listen(port, () => {
 
 function shutdown() {
   server.close(() => {
+    for (const t of tenantDbs) t.close();
     db.close();
     process.exit(0);
   });

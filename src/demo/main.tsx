@@ -4,6 +4,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { HashRouter } from "react-router-dom";
 import App from "../App";
+import { AuthGate } from "../components/AuthGate";
 import { QuotaProvider } from "../components/Quota";
 import { SessionProvider } from "../components/Session";
 import { ToastProvider } from "../components/Toast";
@@ -31,12 +32,14 @@ startDemoServer()
       <StrictMode>
         <HashRouter>
           <ToastProvider>
-            <SessionProvider>
-              <QuotaProvider>
-                <DemoBanner />
-                <App />
-              </QuotaProvider>
-            </SessionProvider>
+            <DemoBanner />
+            <AuthGate>
+              <SessionProvider>
+                <QuotaProvider>
+                  <App />
+                </QuotaProvider>
+              </SessionProvider>
+            </AuthGate>
           </ToastProvider>
         </HashRouter>
       </StrictMode>,

@@ -161,7 +161,15 @@ const evaluationSchema = z.object({
  * Framework-agnostic API: the same routes are served by Express (server/app.ts)
  * and by the in-browser demo build (src/demo), so both behave identically.
  */
-export function createApiRouter(db: DB, previews: PreviewProvider) {
+export interface ApiRouterOptions {
+  /** Only the master workspace may add operators. Client accounts never create logins. */
+  canManageUsers?: boolean;
+}
+
+export type ApiRouter = ReturnType<typeof createApiRouter>;
+
+export function createApiRouter(db: DB, previews: PreviewProvider, options: ApiRouterOptions = {}) {
+  const canManageUsers = options.canManageUsers ?? true;
   const routes: { method: string; pattern: RegExp; keys: string[]; handler: Handler }[] = [];
   const route = (method: string, path: string, handler: Handler) => {
     const keys: string[] = [];
@@ -181,6 +189,7 @@ export function createApiRouter(db: DB, previews: PreviewProvider) {
     return ok(200, db.prepare("SELECT id, name, email FROM users ORDER BY name").all());
   });
   route("POST", "/users", (req) => {
+    if (!canManageUsers) throw new HttpError(403, "Sua conta não pode criar novos usuários.");
     const body = parseBody(z.object({ name: z.string().trim().min(2).max(80), email: z.email().max(120) }), req.body);
     try {
       const info = db.prepare("INSERT INTO users (name, email) VALUES (?, ?)").run(sanitizeText(body.name, 80), body.email.toLowerCase());

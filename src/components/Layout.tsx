@@ -1,5 +1,5 @@
-import { ChevronDown, LayoutGrid, LogOut, Megaphone, Menu, PanelLeftClose, PanelLeftOpen, Users, X } from "lucide-react";
-import { logout } from "./AuthGate";
+import { ChevronDown, LayoutGrid, LogOut, Megaphone, Menu, PanelLeftClose, PanelLeftOpen, UserCog, Users, X } from "lucide-react";
+import { logout, useAuth } from "./AuthGate";
 import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { initials } from "../lib/format";
@@ -54,6 +54,7 @@ function readCollapsed(): boolean {
 
 function Navigation({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
   const { pathname } = useLocation();
+  const { role } = useAuth();
   const [open, setOpen] = useState<Record<string, boolean>>({ campanhas: true, leads: true });
   return (
     <nav className="nav" aria-label="Menu principal">
@@ -90,12 +91,20 @@ function Navigation({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?
           </div>
         );
       })}
+      {role === "admin" && (
+        <NavLink to="/usuarios" className="nav-link" onClick={onNavigate} title={collapsed ? "Novos usuários" : undefined}>
+          <UserCog size={19} aria-hidden />
+          <span className="nav-label">Novos usuários</span>
+        </NavLink>
+      )}
     </nav>
   );
 }
 
 export function Layout() {
   const { user, users, selectUser, addUser } = useSession();
+  const auth = useAuth();
+  const isClient = auth.role === "client";
   const toast = useToast();
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
@@ -181,24 +190,35 @@ export function Layout() {
           <div className="topbar-right">
           <QuotaBadge />
           <div className="user-chip">
-            <label htmlFor="operator" className="small muted user-name-label">
-              Operador
-            </label>
-            <select
-              id="operator"
-              value={user?.id ?? ""}
-              onChange={(e) => (e.target.value === "new" ? setAdding(true) : selectUser(Number(e.target.value)))}
-              aria-label="Operador responsável"
-            >
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-              <option value="new">+ Adicionar operador</option>
-            </select>
+            {isClient ? (
+              <>
+                <span className="small muted user-name-label">Conta</span>
+                <strong className="user-chip-name" title={auth.account?.login}>
+                  {auth.account?.name ?? user?.name}
+                </strong>
+              </>
+            ) : (
+              <>
+                <label htmlFor="operator" className="small muted user-name-label">
+                  Operador
+                </label>
+                <select
+                  id="operator"
+                  value={user?.id ?? ""}
+                  onChange={(e) => (e.target.value === "new" ? setAdding(true) : selectUser(Number(e.target.value)))}
+                  aria-label="Operador responsável"
+                >
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
+                  ))}
+                  <option value="new">+ Adicionar operador</option>
+                </select>
+              </>
+            )}
             <span className="avatar" aria-hidden>
-              {initials(user?.name ?? "C N")}
+              {initials((isClient ? auth.account?.name : user?.name) ?? "C N")}
             </span>
           </div>
           </div>

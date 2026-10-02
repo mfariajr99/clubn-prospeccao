@@ -206,3 +206,59 @@ export interface DashboardMetrics {
   conversion_by_potential: { level: PotentialLevel | "none"; total: number; interested: number; partnerships: number }[];
   conversion_by_campaign: { id: number; name: string; status: CampaignStatus; total: number; contacted: number; interested: number; partnerships: number }[];
 }
+
+// ---------------- Access (master admin + independent client logins) ----------------
+export type Role = "admin" | "client";
+
+export interface AuthStatus {
+  required: boolean;
+  authenticated: boolean;
+  role: Role | null;
+  account: { id: number; name: string; login: string } | null;
+  /** Demo build only: credentials hint shown on the login screen. */
+  hint?: string;
+}
+
+/** Numbers only: the admin follows clients without seeing their leads or messages. */
+export interface ClientMetrics {
+  leads: number;
+  campaigns: number;
+  campaigns_in_progress: number;
+  whatsapp_opened: number;
+  contacted: number;
+  replied: number;
+  interested: number;
+  partnerships: number;
+  sends_today: number;
+  last_activity_at: string | null;
+}
+
+export interface ClientAccountSummary {
+  id: number;
+  name: string;
+  login: string;
+  active: boolean;
+  created_at: string;
+  last_login_at: string | null;
+  metrics: ClientMetrics;
+}
+
+export interface ClientCampaignNumbers {
+  id: number;
+  name: string;
+  status: CampaignStatus;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  total: number;
+  whatsapp_opened: number;
+  contacted: number;
+  replied: number;
+  interested: number;
+  not_interested: number;
+  partnerships: number;
+}
+
+export interface ClientAccountDetail extends ClientAccountSummary {
+  campaigns: ClientCampaignNumbers[];
+}

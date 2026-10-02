@@ -33,7 +33,9 @@ npm start                   # serve API e front-end em http://localhost:3333
 | Variável | Padrão | Uso |
 | --- | --- | --- |
 | `PORT` | `3333` | Porta da API |
-| `DATABASE_FILE` | `data/clubn.db` | Arquivo SQLite |
+| `DATABASE_FILE` | `data/clubn.db` | Arquivo SQLite principal (os bancos dos clientes ficam em `accounts/` na mesma pasta) |
+| `APP_PASSWORD` | — | Senha do administrador; quando definida, todo o sistema exige login |
+| `APP_ADMIN_LOGIN` | `admin` | Login do administrador |
 | `PREVIEW_TTL_DAYS` | `7` | Validade do cache das prévias |
 | `PREVIEW_REFRESH_COOLDOWN_SECONDS` | `60` | Intervalo mínimo entre atualizações manuais da mesma prévia |
 | `PREVIEW_SCREENSHOTS` | `off` | `on` ativa a captura visual com Chromium headless (Playwright) |
@@ -47,7 +49,14 @@ npm start                   # serve API e front-end em http://localhost:3333
 3. Quando o Render pedir, defina `APP_PASSWORD` (senha de acesso da equipe). `SESSION_SECRET` é gerado automaticamente.
 4. Após o deploy, abra o endereço `.onrender.com`, entre com a senha e adicione os operadores em **Operador → + Adicionar operador**.
 
-Com `APP_PASSWORD` definido, toda a API exige login (cookie de sessão HttpOnly, 14 dias, tentativas limitadas). Sem ele (desenvolvimento local), o acesso é livre.
+Com `APP_PASSWORD` definido, toda a API exige login (cookie de sessão HttpOnly, 14 dias, tentativas limitadas). Sem ele (desenvolvimento local), o acesso de administrador é livre.
+
+## Acessos: administrador e novos usuários
+
+- **Administrador (master)**: login `admin` (ou `APP_ADMIN_LOGIN`) + `APP_PASSWORD`. Usa a base principal (operadores Thomaz, Lucas e Marcos) e vê o menu **Novos usuários**.
+- **Novos usuários (clientes)**: criados pelo administrador em *Novos usuários* (nome, login e senha). Cada um tem um **banco de dados próprio** (`data/accounts/cliente-<id>-<chave>.db`, no disco persistente do Render), começa do zero e só enxerga os próprios leads e campanhas. Não criam logins nem operadores e não acessam a área do administrador.
+- **Acompanhamento**: o administrador vê apenas números de cada cliente (leads, campanhas, WhatsApp abertos, respostas, interessados, parcerias, envios do dia, último acesso) — sem nomes de leads, telefones ou textos de mensagens.
+- O administrador pode **redefinir a senha** e **bloquear/liberar** o acesso; as duas ações desconectam o cliente na hora. Senhas são guardadas com scrypt + salt.
 
 ## Verificação
 
@@ -85,7 +94,7 @@ npm run test:e2e            # build + Playwright em desktop (1440px) e mobile (P
 
 ## Limitações conhecidas
 
-- **Autenticação**: o acesso é protegido por uma senha única da equipe (`APP_PASSWORD`). O operador responsável é escolhido no topo da tela (sem senha individual). Para login individual por pessoa, é preciso evoluir para contas de usuário.
+- **Autenticação**: o administrador usa a senha `APP_PASSWORD`; dentro da base principal, o operador responsável é escolhido no topo da tela (sem senha individual). Clientes têm login e senha próprios, com um único usuário por conta.
 - **Instagram e outras redes**: só as vias oficiais são permitidas. A API oficial ou o oEmbed exigem um app aprovado pela Meta e um token, que não estão configurados. Por isso o sistema usa a imagem de capa manual ou um card.
 - **Captura visual**: vem desativada por padrão. Para ligar, é preciso ter o Chromium do Playwright instalado (`npx playwright install chromium`) e definir `PREVIEW_SCREENSHOTS=on`. O navegador de captura valida cada requisição contra as regras de SSRF, mas não consegue fixar o IP resolvido como a busca de metadados faz.
 - **Proxy corporativo**: a busca de prévias conecta direto ao site, sem passar por `HTTP(S)_PROXY`.

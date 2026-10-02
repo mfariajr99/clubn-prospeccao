@@ -201,4 +201,26 @@ CREATE TABLE operator_send_quota (
 );
 `,
   },
+  {
+    id: 3,
+    name: "client_accounts",
+    sql: `
+-- Independent client logins created by the master admin. Each client works in
+-- its own isolated database (data/accounts/cliente-<id>.db); this table only
+-- lives in the master database.
+CREATE TABLE client_accounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  login TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  password_hash TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+  session_version INTEGER NOT NULL DEFAULT 1,
+  -- random part of the client's database file name (never reused)
+  storage_key TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT ${NOW},
+  updated_at TEXT NOT NULL DEFAULT ${NOW},
+  last_login_at TEXT
+);
+`,
+  },
 ];

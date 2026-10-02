@@ -19,8 +19,8 @@ export default defineConfig({
   ],
   webServer: {
     // Serves the production build (run `vite build` first — `npm run test:e2e` does it) with a fresh demo database.
-    command: `node -e "for (const f of ['data/e2e.db','data/e2e.db-wal','data/e2e.db-shm']) { try { require('fs').rmSync(f) } catch {} }" && npx tsx server/db/seed-cli.ts && npx tsx server/index.ts`,
-    env: { DATABASE_FILE: "data/e2e.db", PORT: String(PORT), PREVIEW_SCREENSHOTS: "off" },
+    command: `node -e "try { require('fs').rmSync('data/e2e', { recursive: true }) } catch {}" && npx tsx server/db/seed-cli.ts && npx tsx server/index.ts`,
+    env: { DATABASE_FILE: "data/e2e/clubn.db", PORT: String(PORT), PREVIEW_SCREENSHOTS: "off" },
     url: `http://localhost:${PORT}/api/me`,
     reuseExistingServer: false,
     timeout: 60_000,

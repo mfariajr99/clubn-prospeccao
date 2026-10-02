@@ -579,3 +579,27 @@ a.cell-title:hover { text-decoration: underline; }
 @media (max-width: 380px) {
   .quota-badge .qb-day { display: none; }
 }
+
+/* ---------------- Access: login, admin users ---------------- */
+.input-with-action { display: flex; align-items: center; gap: 6px; }
+.input-with-action .input { flex: 1; min-width: 0; }
+.user-chip-name { font-size: 14px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 4px; }
+.back-link { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); text-decoration: none; margin-bottom: 10px; }
+.back-link:hover { color: var(--text); }
+.btn.secondary.danger-text { color: var(--danger); }
+.credentials-box { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+.credentials-box pre {
+  margin: 0; width: 100%; padding: 14px; border-radius: 12px; background: var(--navy-50); border: 1px solid var(--border);
+  font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; user-select: all;
+}
+.client-figures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; font-size: 13px; color: var(--text-2); }
+.client-figures strong { color: var(--text); }
+@media (max-width: 767px) {
+  .user-chip-name { max-width: 84px; font-size: 13px; }
+}
+@media (max-width: 767px) {
+  /* two stats per row: icon above the label so words are never split */
+  .stat .stat-head { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .stat .stat-icon { width: 34px; height: 34px; }
+  .stat .stat-label { overflow-wrap: normal; word-break: normal; hyphens: auto; }
+}

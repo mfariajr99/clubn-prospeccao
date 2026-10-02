@@ -14,7 +14,7 @@ function app(password?: string) {
 describe("senha de acesso da equipe", () => {
   it("sem APP_PASSWORD o acesso é livre", async () => {
     const agent = app();
-    expect((await agent.get("/api/auth/status")).body).toEqual({ required: false, authenticated: true });
+    expect((await agent.get("/api/auth/status")).body).toMatchObject({ required: false, authenticated: true, role: "admin", account: null });
     expect((await agent.get("/api/leads")).status).toBe(200);
   });
 
@@ -30,7 +30,7 @@ describe("senha de acesso da equipe", () => {
     const cookie = ok.headers["set-cookie"][0].split(";")[0];
     expect(ok.headers["set-cookie"][0]).toContain("HttpOnly");
     expect((await agent.get("/api/leads").set("Cookie", cookie)).status).toBe(200);
-    expect((await agent.get("/api/auth/status").set("Cookie", cookie)).body).toEqual({ required: true, authenticated: true });
+    expect((await agent.get("/api/auth/status").set("Cookie", cookie)).body).toMatchObject({ required: true, authenticated: true, role: "admin" });
     // tampered cookie is rejected
     expect((await agent.get("/api/leads").set("Cookie", cookie.replace(/.$/, "x"))).status).toBe(401);
   });
