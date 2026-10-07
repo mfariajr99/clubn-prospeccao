@@ -35,6 +35,43 @@ const DEFAULT_MESSAGES = [
   "Bom dia, {{nome_estabelecimento}}! O Club’n conecta estabelecimentos de {{cidade}} a clientes do nosso clube de benefícios. Faz sentido conversarmos sobre uma parceria?",
 ];
 
+function LotsPreview({ total, size, hours, start }: { total: number; size: number; hours: number; start: string }) {
+  if (!size || !hours || size < 1 || hours < 1) return null;
+  const lots = Math.max(1, Math.ceil(total / size));
+  const startMs = start ? Date.parse(start) : NaN;
+  const fmt = (ms: number) => new Date(ms).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const gap = Math.max(1, Math.floor((hours * 60) / size));
+  const shown = Math.min(lots, 4);
+  return (
+    <div className="lots-preview" data-testid="lots-preview">
+      <div className="notice" role="note">
+        <Gauge size={16} />
+        <span>
+          <strong>
+            {total ? `${fmtNumber(total)} lead(s) → ${fmtNumber(lots)} lote(s) de até ${size}` : `Lotes de até ${size} leads`}, um a cada {hours} hora{hours === 1 ? "" : "s"}.
+          </strong>{" "}
+          Ritmo sugerido: 1 mensagem a cada {gap >= 60 ? `${Math.floor(gap / 60)}h${gap % 60 ? String(gap % 60).padStart(2, "0") : ""}` : `${gap} min`}.
+          {total > 0 && !Number.isNaN(startMs) && <> Último lote termina em {fmt(startMs + lots * hours * 3600_000)}.</>} As sessões do operador (até 90 por dia) continuam valendo.
+        </span>
+      </div>
+      {total > 0 && !Number.isNaN(startMs) && (
+        <ol className="lots-list">
+          {Array.from({ length: shown }, (_, i) => (
+            <li key={i}>
+              <strong>Lote {i + 1}</strong>
+              <span>
+                {fmt(startMs + i * hours * 3600_000)} → {fmt(startMs + (i + 1) * hours * 3600_000)}
+              </span>
+              <span className="muted">{i === lots - 1 ? total - size * (lots - 1) : size} leads</span>
+            </li>
+          ))}
+          {lots > shown && <li className="muted">+ {fmtNumber(lots - shown)} lote(s)…</li>}
+        </ol>
+      )}
+    </div>
+  );
+}
+
 function formatDuration(hours: number): string {
   if (hours < 24) return `${hours} hora${hours === 1 ? "" : "s"}`;
   const days = Math.round((hours / 24) * 10) / 10;
@@ -62,13 +99,18 @@ export default function CampaignForm() {
   const [sendLimit, setSendLimit] = useState(String(DEFAULT_SEND_LIMIT));
   const [windowHours, setWindowHours] = useState(String(DEFAULT_SEND_WINDOW_HOURS));
   const [scheduled, setScheduled] = useState(false);
-  const [startAt, setStartAt] = useState("");
+  const [mode, setMode] = useState<"lots" | "simple">("lots");
+  const [startAt, setStartAt] = useState(() => {
+    const d = new Date(Date.now() + 3600_000);
+    d.setMinutes(0, 0, 0);
+    return toLocalInput(d.toISOString());
+  });
   const [endAt, setEndAt] = useState("");
-  const [filter, setFilter] = useState<LeadFilterValues>(() => state.filter ?? (batchId ? { batch_id: batchId } : {}));
+  const [filter, setFilter] = useState<LeadFilterValues>(() => ({ available: "1", ...(state.filter ?? (batchId ? { batch_id: batchId } : {})) }));
   const [selection, setSelection] = useState<PickerSelection>(emptySelection);
   const [pageLeads, setPageLeads] = useState<Lead[]>([]);
   const [previewLeadId, setPreviewLeadId] = useState<number | null>(null);
-  const [errors, setErrors] = useState<{ name?: string; messages?: (string | undefined)[]; leads?: string; send_limit?: string; send_window_hours?: string; scheduled_start_at?: string; scheduled_end_at?: string }>({});
+  const [errors, setErrors] = useState<{ name?: string; messages?: (string | undefined)[]; leads?: string; send_limit?: string; send_window_hours?: string; batch_size?: string; batch_hours?: string; scheduled_start_at?: string; scheduled_end_at?: string }>({});
   const [saving, setSaving] = useState(false);
   const submitting = useRef(false);
 
@@ -101,6 +143,7 @@ export default function CampaignForm() {
         setSendLimit(c.send_limit ? String(c.send_limit) : "");
         setWindowHours(c.send_window_hours ? String(c.send_window_hours) : "");
         setScheduled(Boolean(c.scheduled_start_at || c.scheduled_end_at));
+        setMode(c.batch_size ? "lots" : "simple");
         setStartAt(toLocalInput(c.scheduled_start_at));
         setEndAt(toLocalInput(c.scheduled_end_at));
       })
@@ -138,14 +181,16 @@ export default function CampaignForm() {
     }
     const limitN = Number(sendLimit);
     const windowN = Number(windowHours);
-    if (!Number.isInteger(limitN) || limitN < 1 || limitN > MAX_SEND_LIMIT) next.send_limit = `Informe de 1 a ${MAX_SEND_LIMIT} mensagens.`;
-    if (!Number.isInteger(windowN) || windowN < 1 || windowN > MAX_SEND_WINDOW_HOURS) next.send_window_hours = `Informe de 1 a ${MAX_SEND_WINDOW_HOURS} horas.`;
-    if (scheduled) {
+    const lots = mode === "lots";
+    if (!Number.isInteger(limitN) || limitN < 1 || limitN > MAX_SEND_LIMIT) next[lots ? "batch_size" : "send_limit"] = `Informe de 1 a ${MAX_SEND_LIMIT}.`;
+    if (!Number.isInteger(windowN) || windowN < 1 || windowN > MAX_SEND_WINDOW_HOURS) next[lots ? "batch_hours" : "send_window_hours"] = `Informe de 1 a ${MAX_SEND_WINDOW_HOURS} horas.`;
+    if (lots && !startAt) next.scheduled_start_at = "Informe o início do 1º lote.";
+    if (scheduled && !lots) {
       if (!startAt) next.scheduled_start_at = "Informe a data e a hora de início.";
       else if (!editing && Date.parse(startAt) < Date.now() - 60_000) next.scheduled_start_at = "Escolha um horário no futuro.";
       if (endAt && startAt && Date.parse(endAt) <= Date.parse(startAt)) next.scheduled_end_at = "O fim precisa ser depois do início.";
     }
-    const finalStatus = scheduled ? "ready" : status;
+    const finalStatus = scheduled || lots ? "ready" : status;
     if (finalStatus === "ready" && totalLeads === 0) next.leads = scheduled ? "Selecione ao menos um lead para agendar a campanha." : "Selecione ao menos um lead para deixar a campanha pronta para iniciar.";
     setErrors(next);
     if (Object.keys(next).length) {
@@ -163,8 +208,10 @@ export default function CampaignForm() {
       status: finalStatus,
       send_limit: limitN,
       send_window_hours: windowN,
-      scheduled_start_at: scheduled ? fromLocalInput(startAt) : null,
-      scheduled_end_at: scheduled ? fromLocalInput(endAt) : null,
+      scheduled_start_at: lots || scheduled ? fromLocalInput(startAt) : null,
+      scheduled_end_at: !lots && scheduled ? fromLocalInput(endAt) : null,
+      batch_size: lots ? limitN : null,
+      batch_hours: lots ? windowN : null,
       lead_ids: selection.mode === "ids" && selection.ids.size ? [...selection.ids] : undefined,
       lead_filter: selection.mode === "filter" ? cleanFilter(selection.filter) : undefined,
     };
@@ -215,7 +262,7 @@ export default function CampaignForm() {
             <input id="campaign-name" className="input" maxLength={120} value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: Parceiros gastronomia — zona sul" />
           </Field>
           <Field label="Status" htmlFor="campaign-status" hint={campaign?.status === "paused" ? "Campanha pausada: o status será mantido." : "“Pronta para iniciar” libera a campanha na tela Iniciar campanhas."}>
-            <select id="campaign-status" className="select" value={status} onChange={(e) => setStatus(e.target.value as "draft" | "ready")} disabled={campaign?.status === "paused" || scheduled}>
+            <select id="campaign-status" className="select" value={status} onChange={(e) => setStatus(e.target.value as "draft" | "ready")} disabled={campaign?.status === "paused" || scheduled || mode === "lots"}>
               <option value="draft">Rascunho</option>
               <option value="ready">Pronta para iniciar</option>
             </select>
@@ -254,63 +301,85 @@ export default function CampaignForm() {
 
       <section className="card" aria-labelledby="rule-title">
         <h2 id="rule-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Gauge size={19} aria-hidden /> Regra de disparo
+          <Gauge size={19} aria-hidden /> Regra de disparo e agendamento
         </h2>
-        <p className="card-sub">Limite de mensagens desta campanha em um período. Ao atingir o limite, o botão “Enviar mensagem” fica bloqueado até liberar o próximo envio.</p>
-        <div className="rule-row">
-          <Field label="Até quantas mensagens" required htmlFor="send-limit" error={errors.send_limit}>
-            <input id="send-limit" className="input" type="number" inputMode="numeric" min={1} max={MAX_SEND_LIMIT} value={sendLimit} onChange={(e) => setSendLimit(e.target.value)} />
-          </Field>
-          <Field label="A cada (horas)" required htmlFor="send-window" error={errors.send_window_hours}>
-            <input id="send-window" className="input" type="number" inputMode="numeric" min={1} max={MAX_SEND_WINDOW_HOURS} value={windowHours} onChange={(e) => setWindowHours(e.target.value)} />
-          </Field>
-          <div className="rule-presets" role="group" aria-label="Períodos sugeridos">
-            {WINDOW_PRESETS.map((p) => (
-              <button key={p.hours} type="button" className="chip" aria-pressed={Number(windowHours) === p.hours} onClick={() => setWindowHours(String(p.hours))}>
-                {p.label}
-              </button>
-            ))}
-          </div>
+        <div className="segmented" role="group" aria-label="Forma de disparo" style={{ marginTop: 10 }}>
+          <button type="button" aria-pressed={mode === "lots"} onClick={() => setMode("lots")}>
+            Lotes agendados (recomendado)
+          </button>
+          <button type="button" aria-pressed={mode === "simple"} onClick={() => setMode("simple")}>
+            Regra simples
+          </button>
         </div>
-        <div className="notice" role="note" style={{ marginTop: 12 }} data-testid="rule-summary">
-          <Gauge size={16} />
-          <span>
-            <strong>{describeRule(Number(sendLimit) || null, Number(windowHours) || null)}.</strong>
-            {Number(sendLimit) > 0 && Number(windowHours) > 0 && totalLeads > 0 && (
-              <>
-                {" "}
-                {fmtNumber(totalLeads)} lead(s): cerca de {formatDuration(Math.ceil(totalLeads / Number(sendLimit)) * Number(windowHours))} para contatar todos.
-              </>
-            )}{" "}
-            As sessões do operador (até 90 por dia) continuam valendo.
-          </span>
-        </div>
-      </section>
 
-      <section className="card" aria-labelledby="schedule-title">
-        <h2 id="schedule-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <CalendarClock size={19} aria-hidden /> Agendamento
-        </h2>
-        <label className="check-row" style={{ marginTop: 6 }}>
-          <input type="checkbox" checked={scheduled} onChange={(e) => setScheduled(e.target.checked)} /> Agendar o início desta campanha
-        </label>
-        {scheduled ? (
+        {mode === "lots" ? (
           <>
-            <div className="form-grid" style={{ marginTop: 12 }}>
-              <Field label="Início" required htmlFor="schedule-start" error={errors.scheduled_start_at} hint="A campanha entra em andamento sozinha neste horário.">
-                <input id="schedule-start" className="input" type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} />
+            <p className="card-sub" style={{ marginTop: 10 }}>
+              A base é dividida em lotes. Cada lote fica liberado por uma janela de tempo e um lead nunca aparece em dois lotes. O operador envia cada mensagem com um clique, no ritmo
+              sugerido pelo sistema.
+            </p>
+            <div className="rule-row lots">
+              <Field label="Leads por lote" required htmlFor="lot-size" error={errors.batch_size}>
+                <input id="lot-size" className="input" type="number" inputMode="numeric" min={1} max={MAX_SEND_LIMIT} value={sendLimit} onChange={(e) => setSendLimit(e.target.value)} />
               </Field>
-              <Field label="Fim (opcional)" htmlFor="schedule-end" error={errors.scheduled_end_at} hint="Depois deste horário a campanha é concluída.">
-                <input id="schedule-end" className="input" type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
+              <Field label="Um lote a cada (horas)" required htmlFor="lot-hours" error={errors.batch_hours}>
+                <input id="lot-hours" className="input" type="number" inputMode="numeric" min={1} max={MAX_SEND_WINDOW_HOURS} value={windowHours} onChange={(e) => setWindowHours(e.target.value)} />
+              </Field>
+              <Field label="Início do 1º lote" required htmlFor="lot-start" error={errors.scheduled_start_at}>
+                <input id="lot-start" className="input" type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} />
               </Field>
             </div>
-            <p className="small muted" style={{ margin: "8px 0 0" }}>
-              Agendar salva a campanha como “Pronta para iniciar”. No horário de início ela aparece em andamento na Visão geral e em Iniciar campanhas — os envios continuam sendo feitos
-              por clique do operador.
-            </p>
+            <LotsPreview total={totalLeads} size={Number(sendLimit)} hours={Number(windowHours)} start={startAt} />
           </>
         ) : (
-          <p className="small muted" style={{ margin: "8px 0 0" }}>Sem agendamento, a campanha começa quando você clicar em “Iniciar”.</p>
+          <>
+            <p className="card-sub" style={{ marginTop: 10 }}>Limite de mensagens desta campanha em um período. Ao atingir o limite, o botão “Enviar mensagem” fica bloqueado até liberar o próximo envio.</p>
+            <div className="rule-row">
+              <Field label="Até quantas mensagens" required htmlFor="send-limit" error={errors.send_limit}>
+                <input id="send-limit" className="input" type="number" inputMode="numeric" min={1} max={MAX_SEND_LIMIT} value={sendLimit} onChange={(e) => setSendLimit(e.target.value)} />
+              </Field>
+              <Field label="A cada (horas)" required htmlFor="send-window" error={errors.send_window_hours}>
+                <input id="send-window" className="input" type="number" inputMode="numeric" min={1} max={MAX_SEND_WINDOW_HOURS} value={windowHours} onChange={(e) => setWindowHours(e.target.value)} />
+              </Field>
+              <div className="rule-presets" role="group" aria-label="Períodos sugeridos">
+                {WINDOW_PRESETS.map((p) => (
+                  <button key={p.hours} type="button" className="chip" aria-pressed={Number(windowHours) === p.hours} onClick={() => setWindowHours(String(p.hours))}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="notice" role="note" style={{ marginTop: 12 }} data-testid="rule-summary">
+              <Gauge size={16} />
+              <span>
+                <strong>{describeRule(Number(sendLimit) || null, Number(windowHours) || null)}.</strong>
+                {Number(sendLimit) > 0 && Number(windowHours) > 0 && totalLeads > 0 && (
+                  <>
+                    {" "}
+                    {fmtNumber(totalLeads)} lead(s): cerca de {formatDuration(Math.ceil(totalLeads / Number(sendLimit)) * Number(windowHours))} para contatar todos.
+                  </>
+                )}{" "}
+                As sessões do operador (até 90 por dia) continuam valendo.
+              </span>
+            </div>
+            <div style={{ marginTop: 16 }}>
+              <label className="check-row">
+                <input type="checkbox" checked={scheduled} onChange={(e) => setScheduled(e.target.checked)} /> <CalendarClock size={16} aria-hidden /> Agendar o início desta campanha
+              </label>
+              {scheduled ? (
+                <div className="form-grid" style={{ marginTop: 12 }}>
+                  <Field label="Início" required htmlFor="schedule-start" error={errors.scheduled_start_at} hint="A campanha entra em andamento sozinha neste horário.">
+                    <input id="schedule-start" className="input" type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} />
+                  </Field>
+                  <Field label="Fim (opcional)" htmlFor="schedule-end" error={errors.scheduled_end_at} hint="Depois deste horário a campanha é concluída.">
+                    <input id="schedule-end" className="input" type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
+                  </Field>
+                </div>
+              ) : (
+                <p className="small muted" style={{ margin: "8px 0 0" }}>Sem agendamento, a campanha começa quando você clicar em “Iniciar”.</p>
+              )}
+            </div>
+          </>
         )}
       </section>
 
@@ -330,6 +399,17 @@ export default function CampaignForm() {
             {errors.leads}
           </div>
         )}
+        <label className="check-row" style={{ marginBottom: 12, fontWeight: 500 }}>
+          <input
+            type="checkbox"
+            checked={filter.available === "1"}
+            onChange={(e) => {
+              setFilter((f) => ({ ...f, available: e.target.checked ? "1" : undefined }));
+              setSelection(emptySelection());
+            }}
+          />
+          Mostrar só leads livres (que não estão em outra campanha aberta)
+        </label>
         <LeadPicker value={selection} onChange={setSelection} filter={filter} onFilterChange={setFilter} excludeCampaignId={editing ? Number(id) : undefined} onPageLeads={setPageLeads} />
       </section>
 

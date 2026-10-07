@@ -1,7 +1,7 @@
 import { CONTACTED_STATUSES } from "../../shared/constants.js";
 import type { CampaignTracking, CampaignTrackingSummary, DashboardMetrics } from "../../shared/types.js";
 import { brWeekRange, REPLY_GOAL, ruleCapacity } from "../../shared/campaignRule.js";
-import { campaignRule } from "./campaignRules.js";
+import { campaignLots, campaignRule } from "./campaignRules.js";
 import type { DB } from "../db/core.js";
 
 const CONTACTED = CONTACTED_STATUSES.map((s) => `'${s}'`).join(",");
@@ -62,7 +62,7 @@ export function campaignTracking(db: DB, now = new Date()): CampaignTrackingSumm
   const ws = weekStart.toISOString();
   const rows = db
     .prepare(
-      `SELECT c.id, c.name, c.status, c.scheduled_start_at, c.scheduled_end_at, c.started_at, c.send_limit, c.send_window_hours,
+      `SELECT c.id, c.name, c.status, c.scheduled_start_at, c.scheduled_end_at, c.started_at, c.send_limit, c.send_window_hours, c.batch_size, c.batch_hours,
         COUNT(cl.id) AS total,
         SUM(CASE WHEN cl.contact_status = 'not_contacted' THEN 1 ELSE 0 END) AS pending,
         SUM(CASE WHEN cl.contact_status <> 'not_contacted' THEN 1 ELSE 0 END) AS sent,
@@ -74,13 +74,22 @@ export function campaignTracking(db: DB, now = new Date()): CampaignTrackingSumm
        GROUP BY c.id
        ORDER BY CASE c.status WHEN 'in_progress' THEN 0 WHEN 'ready' THEN 1 WHEN 'paused' THEN 2 ELSE 3 END, COALESCE(c.scheduled_start_at, c.updated_at)`,
     )
-    .all(ws, ws) as (Omit<CampaignTracking, "rule" | "planned_this_week"> & { send_limit: number | null; send_window_hours: number | null })[];
+    .all(ws, ws) as (Omit<CampaignTracking, "rule" | "planned_this_week" | "lots"> & {
+    send_limit: number | null;
+    send_window_hours: number | null;
+    batch_size: number | null;
+    batch_hours: number | null;
+  })[];
 
   const campaigns: CampaignTracking[] = rows.map((r) => {
     const rule = campaignRule(db, r, now);
+    const lots = campaignLots(db, r, now);
     let plannedRemaining = 0;
     const open = r.status === "in_progress" || (r.status === "ready" && Boolean(r.scheduled_start_at));
-    if (open && r.pending > 0) {
+    if (lots && open) {
+      // lots opening before the end of the week: everything still pending in them
+      plannedRemaining = lots.lots.filter((l) => Date.parse(l.start) < weekEnd.getTime()).reduce((t, l) => t + (l.total - l.sent), 0);
+    } else if (open && r.pending > 0) {
       const from = new Date(Math.max(now.getTime(), r.scheduled_start_at ? Date.parse(r.scheduled_start_at) : 0));
       const until = new Date(Math.min(weekEnd.getTime(), r.scheduled_end_at ? Date.parse(r.scheduled_end_at) : Number.POSITIVE_INFINITY));
       if (from < until) {
@@ -97,6 +106,7 @@ export function campaignTracking(db: DB, now = new Date()): CampaignTrackingSumm
       scheduled_end_at: r.scheduled_end_at,
       started_at: r.started_at,
       rule,
+      lots,
       total: r.total,
       pending: r.pending ?? 0,
       sent: r.sent ?? 0,

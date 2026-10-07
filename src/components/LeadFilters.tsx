@@ -22,6 +22,8 @@ export interface Facets {
 
 export interface LeadFilterValues {
   q?: string;
+  /** "1" = only leads not in any open campaign */
+  available?: string;
   segment?: string;
   neighborhood?: string;
   city?: string;

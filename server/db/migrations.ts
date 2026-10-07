@@ -282,4 +282,16 @@ CREATE INDEX whatsapp_messages_chat ON whatsapp_messages(user_id, chat_jid, sent
 CREATE INDEX whatsapp_messages_unread ON whatsapp_messages(user_id, read, from_me);
 `,
   },
+  {
+    id: 6,
+    name: "campaign_lots",
+    sql: `
+-- Lots: the campaign base is split into lots of batch_size leads, one lot every
+-- batch_hours starting at scheduled_start_at. Lot N opens at start + (N-1) * batch_hours.
+ALTER TABLE campaigns ADD COLUMN batch_size INTEGER;
+ALTER TABLE campaigns ADD COLUMN batch_hours INTEGER;
+ALTER TABLE campaign_leads ADD COLUMN batch_number INTEGER;
+CREATE INDEX campaign_leads_batch ON campaign_leads(campaign_id, batch_number);
+`,
+  },
 ];

@@ -1,5 +1,6 @@
-import { ExternalLink, Eye, ListChecks, Plus, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Clock3, ExternalLink, Eye, Layers, ListChecks, Plus, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { fmtBrDateTime } from "../../shared/campaignRule";
 import { CONTACT_STATUSES, CONTACT_STATUS_LABELS, type ContactStatus } from "../../shared/constants";
 import type { Campaign, CampaignLead, Paginated } from "../../shared/types";
 import { useAsync } from "../hooks/useAsync";
@@ -31,6 +32,15 @@ export function CampaignLeadsBoard({ campaign, manage = false, onChanged }: Prop
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState("added");
+  const lots = campaign.lots ?? null;
+  // On the sending screen, show the open lot first; on the campaign page, everything.
+  const [lot, setLot] = useState<string>(lots && !manage ? "current" : "");
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!lots) return;
+    const t = window.setInterval(() => setTick((x) => x + 1), 30_000);
+    return () => window.clearInterval(t);
+  }, [lots]);
   const [previewId, setPreviewId] = useState<number | null>(null);
   const [statusLead, setStatusLead] = useState<CampaignLead | null>(null);
   const [removeLead, setRemoveLead] = useState<CampaignLead | null>(null);
@@ -40,8 +50,8 @@ export function CampaignLeadsBoard({ campaign, manage = false, onChanged }: Prop
   const [busy, setBusy] = useState(false);
 
   const { data, loading, error, reload, setData } = useAsync(
-    (s) => api.get<Paginated<CampaignLead>>(`/campaigns/${campaign.id}/leads`, { contact_status: statusFilter, q, page, pageSize: PAGE_SIZE, sort, dir: sort === "potential" || sort === "last_contact" ? "desc" : "asc" }, s),
-    [campaign.id, statusFilter, q, page, sort],
+    (s) => api.get<Paginated<CampaignLead>>(`/campaigns/${campaign.id}/leads`, { contact_status: statusFilter, q, page, pageSize: PAGE_SIZE, sort, dir: sort === "potential" || sort === "last_contact" ? "desc" : "asc", lot }, s),
+    [campaign.id, statusFilter, q, page, sort, lot, campaign.updated_at],
   );
   const counts = useAsync(
     (s) => api.get<{ byStatus: { status: ContactStatus; total: number }[] }>(`/campaigns/${campaign.id}/results`, undefined, s),
@@ -59,6 +69,13 @@ export function CampaignLeadsBoard({ campaign, manage = false, onChanged }: Prop
         : campaign.rule?.phase === "scheduled"
           ? campaign.rule.blocked_reason
           : "Inicie ou continue a campanha para enviar mensagens";
+  /** A lead of a lot that has not opened yet cannot be contacted. */
+  const lotReason = (lead: CampaignLead): string | null => {
+    if (!lots || !lead.batch_number) return null;
+    const info = lots.lots.find((l) => l.number === lead.batch_number);
+    if (!info || Date.parse(info.start) <= Date.now()) return null;
+    return `Lote ${lead.batch_number}: liberado em ${fmtBrDateTime(info.start)}`;
+  };
   const previewIndex = items.findIndex((l) => l.id === previewId);
   const previewLead = previewIndex >= 0 ? items[previewIndex] : null;
 
@@ -119,8 +136,56 @@ export function CampaignLeadsBoard({ campaign, manage = false, onChanged }: Prop
     { label: "Remover da campanha", icon: <Trash2 size={15} />, onClick: () => setRemoveLead(lead), danger: true, hidden: !manage || campaign.status === "completed" },
   ];
 
+  const currentLot = lots?.current ? lots.lots.find((l) => l.number === lots.current) : null;
+  const nextAt = lots?.suggested_next_at ? Date.parse(lots.suggested_next_at) : null;
+  const minutesLeft = nextAt ? Math.ceil((nextAt - Date.now()) / 60_000) : 0;
+
   return (
     <div>
+      {lots && (
+        <div className="lot-bar" data-testid="lot-bar">
+          <Layers size={16} aria-hidden />
+          {currentLot ? (
+            <span>
+              <strong>
+                Lote {currentLot.number} de {lots.total_lots}
+              </strong>{" "}
+              · até {fmtBrDateTime(currentLot.end)} ·{" "}
+              <strong className="mono">
+                {currentLot.sent}/{currentLot.total}
+              </strong>{" "}
+              enviados
+            </span>
+          ) : lots.next_start ? (
+            <span>
+              <strong>{lots.total_lots} {lots.total_lots === 1 ? "lote" : "lotes"}</strong> · o próximo lote abre em {fmtBrDateTime(lots.next_start)}
+            </span>
+          ) : (
+            <span>
+              <strong>{lots.total_lots} {lots.total_lots === 1 ? "lote" : "lotes"}</strong> · todos os lotes já foram liberados
+            </span>
+          )}
+          {currentLot && nextAt && (
+            <span className={`lot-next ${minutesLeft <= 0 ? "ready" : ""}`} title={`Ritmo sugerido: 1 mensagem a cada ${lots.gap_minutes} min`}>
+              <Clock3 size={15} aria-hidden />
+              {minutesLeft <= 0 ? "Pode enviar a próxima agora" : `Próximo envio sugerido às ${new Date(nextAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} (em ${minutesLeft} min)`}
+            </span>
+          )}
+        </div>
+      )}
+      {lots && (
+        <div className="lot-chips">
+          <select className="select select-auto" aria-label="Lote" value={lot} onChange={(e) => (setLot(e.target.value), setPage(1))}>
+            <option value="current">{lots.current ? `Lote atual (${lots.current})` : "Próximo lote"}</option>
+            <option value="">Todos os lotes</option>
+            {lots.lots.map((l) => (
+              <option key={l.number} value={String(l.number)}>
+                Lote {l.number} · {fmtBrDateTime(l.start)} · {l.sent}/{l.total}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       <div className="chips scroll" role="group" aria-label="Filtrar por status do contato" style={{ marginBottom: 12 }}>
         {chips.map((s) => (
           <button
@@ -180,6 +245,7 @@ export function CampaignLeadsBoard({ campaign, manage = false, onChanged }: Prop
                   <tr key={lead.id}>
                     <td className="col-main">
                       <div className="cell-title">{lead.establishment_name}</div>
+                      {lead.batch_number && <span className="badge outline lot-badge">Lote {lead.batch_number}</span>}
                       <div className="cell-sub">{[lead.segment, lead.neighborhood, `${lead.city}/${lead.state}`].filter(Boolean).join(" · ")}</div>
                       <div className="cell-sub mono">
                         {fmtPhone(lead.whatsapp, lead.whatsapp_valid === 1)} {lead.whatsapp_valid === 0 && <span className="badge danger">inválido</span>}
@@ -202,7 +268,7 @@ export function CampaignLeadsBoard({ campaign, manage = false, onChanged }: Prop
                         <IconButton label="Ver prévia" onClick={() => setPreviewId(lead.id)}>
                           <Eye size={15} />
                         </IconButton>
-                        <WhatsAppButton lead={lead} templates={[campaign.message_template, campaign.message_template_2, campaign.message_template_3]} campaignId={campaign.id} disabledReason={sendDisabled} size="xs" onOpened={(r) => afterOpen(lead.id, r.current)} onFailed={onChanged} />
+                        <WhatsAppButton lead={lead} templates={[campaign.message_template, campaign.message_template_2, campaign.message_template_3]} campaignId={campaign.id} disabledReason={sendDisabled ?? lotReason(lead)} size="xs" onOpened={(r) => afterOpen(lead.id, r.current)} onFailed={onChanged} />
                         <ActionMenu label={`Mais ações: ${lead.establishment_name}`} items={leadMenu(lead)} />
                       </div>
                     </td>
@@ -217,7 +283,10 @@ export function CampaignLeadsBoard({ campaign, manage = false, onChanged }: Prop
                 <div className="lc-head">
                   <div className="lc-title">
                     <div className="cell-title">{lead.establishment_name}</div>
-                    <div className="cell-sub">{lead.segment}</div>
+                    <div className="cell-sub">
+                      {lead.segment}
+                      {lead.batch_number ? ` · Lote ${lead.batch_number}` : ""}
+                    </div>
                   </div>
                   <button type="button" className="badge-button" onClick={() => setStatusLead(lead)} aria-label={`Alterar status de ${lead.establishment_name}`}>
                     <ContactBadge status={lead.campaign_contact_status} />
@@ -231,7 +300,7 @@ export function CampaignLeadsBoard({ campaign, manage = false, onChanged }: Prop
                 </div>
                 <PresenceCell url={lead.digital_presence_url} type={lead.digital_presence_type} compact />
                 <div className="lc-actions">
-                  <WhatsAppButton lead={lead} templates={[campaign.message_template, campaign.message_template_2, campaign.message_template_3]} campaignId={campaign.id} disabledReason={sendDisabled} variant="block" onOpened={(r) => afterOpen(lead.id, r.current)} onFailed={onChanged} />
+                  <WhatsAppButton lead={lead} templates={[campaign.message_template, campaign.message_template_2, campaign.message_template_3]} campaignId={campaign.id} disabledReason={sendDisabled ?? lotReason(lead)} variant="block" onOpened={(r) => afterOpen(lead.id, r.current)} onFailed={onChanged} />
                   <div className="lc-secondary">
                     <button className="btn secondary sm" onClick={() => setPreviewId(lead.id)}>
                       <Eye size={15} /> Ver prévia

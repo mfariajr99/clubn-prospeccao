@@ -3,6 +3,7 @@
 // Usage: npm run db:seed        (adds demo data if the database has no leads)
 //        npm run db:seed -- --reset   (clears leads/campaigns/imports first)
 
+import { assignLots } from "../services/campaignRules.js";
 import { normalizeLeadInput } from "../../shared/leadInput.js";
 import { ensureDefaultUser, type DB } from "./core.js";
 import { insertLead } from "../services/leads.js";
@@ -193,10 +194,10 @@ export function seed(db: DB, reset = false): void {
     db.prepare("UPDATE campaigns SET send_limit = 30, send_window_hours = 6 WHERE id IN (?, ?)").run(running, draft);
     db.prepare("UPDATE campaigns SET send_limit = 20, send_window_hours = 24 WHERE id = ?").run(done);
     db.prepare(
-      `UPDATE campaigns SET send_limit = 15, send_window_hours = 6,
-        scheduled_start_at = strftime('%Y-%m-%dT12:00:00.000Z', 'now', '+1 day'),
-        scheduled_end_at = strftime('%Y-%m-%dT21:00:00.000Z', 'now', '+8 days') WHERE id = ?`,
+      `UPDATE campaigns SET send_limit = 2, send_window_hours = 12, batch_size = 2, batch_hours = 12,
+        scheduled_start_at = strftime('%Y-%m-%dT12:00:00.000Z', 'now', '+1 day') WHERE id = ?`,
     ).run(importedCampaign);
+    assignLots(db, importedCampaign);
 
     // Manual evaluations (general + one campaign-specific)
     const evaluate = (lead: number, level: string, score: number, campaign: number | null, notes: string) =>

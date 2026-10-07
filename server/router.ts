@@ -88,6 +88,7 @@ function leadFilterFromQuery(q: Query): LeadFilter & { page?: number; pageSize?:
     presence: str(q.presence),
     potential: str(q.potential),
     not_in_campaign: num(q.not_in_campaign),
+    available: q.available === "1" || q.available === "true",
     page: num(q.page),
     pageSize: num(q.pageSize),
     sort: str(q.sort),
@@ -108,6 +109,7 @@ const leadFilterSchema = z
     presence: z.string().optional(),
     potential: z.string().optional(),
     not_in_campaign: z.coerce.number().int().positive().optional(),
+    available: z.union([z.boolean(), z.string()]).transform((v) => v === true || v === "1" || v === "true").optional(),
   })
   .strip();
 
@@ -136,6 +138,8 @@ const campaignBodySchema = z.object({
   send_window_hours: z.number().int().nullable().optional(),
   scheduled_start_at: z.string().max(40).nullable().optional(),
   scheduled_end_at: z.string().max(40).nullable().optional(),
+  batch_size: z.number().int().nullable().optional(),
+  batch_hours: z.number().int().nullable().optional(),
   lead_ids: z.array(z.number().int().positive()).max(20000).optional(),
   lead_filter: leadFilterSchema.optional(),
 });
@@ -390,6 +394,8 @@ export function createApiRouter(db: DB, previews: PreviewProvider, options: ApiR
         send_window_hours: body.send_window_hours ?? null,
         scheduled_start_at: body.scheduled_start_at ?? null,
         scheduled_end_at: body.scheduled_end_at ?? null,
+        batch_size: body.batch_size ?? null,
+        batch_hours: body.batch_hours ?? null,
       },
       req.user.id,
       body.lead_ids?.length ? { leadIds: body.lead_ids } : body.lead_filter ? { filter: body.lead_filter } : undefined,
@@ -416,6 +422,8 @@ export function createApiRouter(db: DB, previews: PreviewProvider, options: ApiR
         send_window_hours: body.send_window_hours ?? null,
         scheduled_start_at: body.scheduled_start_at ?? null,
         scheduled_end_at: body.scheduled_end_at ?? null,
+        batch_size: body.batch_size ?? null,
+        batch_hours: body.batch_hours ?? null,
       });
     })();
     return ok(200, getCampaign(db, id));
@@ -434,6 +442,7 @@ export function createApiRouter(db: DB, previews: PreviewProvider, options: ApiR
         ...filter,
         contact_status: undefined,
         campaign_contact_status: str(req.query.contact_status),
+        lot: str(req.query.lot),
         dir: req.query.dir === "desc" ? "desc" : "asc",
       }),
     );

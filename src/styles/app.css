@@ -717,3 +717,18 @@ a.cell-title:hover { text-decoration: underline; }
   .thread-body { padding: 12px; }
   .bubble { max-width: 88%; }
 }
+.rule-row.lots { grid-template-columns: minmax(0, 180px) minmax(0, 200px) minmax(0, 260px); }
+.lots-preview { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.lots-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); gap: 8px; }
+.lots-list li { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; font-size: 13px; background: var(--bg); }
+.lot-bar { display: flex; align-items: center; gap: 10px 16px; flex-wrap: wrap; padding: 12px 14px; border-radius: 12px; background: var(--navy-50); margin-bottom: 14px; font-size: 13.5px; }
+.lot-bar .lot-next { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.lot-bar .lot-next.ready { color: var(--success); }
+.lot-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+@media (max-width: 767px) {
+  .rule-row.lots { grid-template-columns: 1fr 1fr; }
+  .rule-row.lots .field:last-child { grid-column: 1 / -1; }
+  .lot-bar .lot-next { margin-left: 0; }
+}
+.lot-badge { margin: 4px 0 2px; height: 20px; font-size: 11px; }
+.track-lot { color: var(--navy-800); font-weight: 600; background: var(--navy-50); border-radius: 8px; padding: 4px 8px; width: fit-content; }

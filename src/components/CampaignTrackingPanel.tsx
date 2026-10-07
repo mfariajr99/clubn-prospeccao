@@ -73,6 +73,15 @@ function TrackingCard({ c, goal, onStarted }: { c: CampaignTracking; goal: numbe
         {c.scheduled_end_at && <span className="cell-sub">até {fmtBrDateTime(c.scheduled_end_at)}</span>}
       </div>
 
+      {c.lots && (
+        <div className="track-lot small" data-testid="tracking-lot">
+          {c.lots.current
+            ? `Lote ${c.lots.current} de ${c.lots.total_lots} · até ${fmtBrDateTime(c.lots.lots.find((l) => l.number === c.lots!.current)!.end)}`
+            : c.lots.next_start
+              ? `${c.lots.total_lots} ${c.lots.total_lots === 1 ? "lote" : "lotes"} · próximo abre ${fmtBrDateTime(c.lots.next_start)}`
+              : `${c.lots.total_lots} ${c.lots.total_lots === 1 ? "lote liberado" : "lotes liberados"}`}
+        </div>
+      )}
       <div className="track-row">
         <span className="small muted">Enviados</span>
         <span className="mono small">

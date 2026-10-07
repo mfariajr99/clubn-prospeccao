@@ -8,7 +8,7 @@ import type {
   QualityLevel,
   RegistrationStatus,
 } from "./constants.js";
-import type { CampaignRuleView } from "./campaignRule.js";
+import type { CampaignRuleView, LotsView } from "./campaignRule.js";
 
 export interface User {
   id: number;
@@ -81,6 +81,9 @@ export interface Campaign {
   started_at?: string | null;
   completed_at?: string | null;
   rule?: CampaignRuleView;
+  batch_size?: number | null;
+  batch_hours?: number | null;
+  lots?: LotsView | null;
 }
 
 export interface CampaignLead extends Lead {
@@ -91,6 +94,7 @@ export interface CampaignLead extends Lead {
   last_contact_at: string | null;
   notes: string | null;
   campaign_potential_level?: PotentialLevel | null;
+  batch_number?: number | null;
 }
 
 export interface ImportBatch {
@@ -240,6 +244,7 @@ export interface CampaignTracking {
   scheduled_end_at: string | null;
   started_at: string | null;
   rule: CampaignRuleView;
+  lots: LotsView | null;
   total: number;
   pending: number;
   sent: number;

@@ -9,7 +9,7 @@ import { HttpError, notFound } from "../lib/http.js";
 import type { QuotaView } from "../../shared/sendQuota.js";
 import { buildCampaignMessage, buildWhatsAppUrl, pickTemplate } from "../../shared/template.js";
 import { consumeQuota, getQuota } from "./quota.js";
-import { assertCampaignCanSend } from "./campaignRules.js";
+import { assertCampaignCanSend, assertLeadLotOpen } from "./campaignRules.js";
 
 export interface LeadFilter {
   q?: string;
@@ -23,6 +23,8 @@ export interface LeadFilter {
   presence?: string; // with | without | <LinkType>
   potential?: string; // high | medium | low | none
   not_in_campaign?: number;
+  /** Only leads that are not in any open campaign (draft, ready, in progress, paused). */
+  available?: boolean;
   ids?: number[];
 }
 
@@ -81,6 +83,11 @@ export function buildLeadWhere(filter: LeadFilter): { sql: string; params: unkno
   if (filter.not_in_campaign) {
     clauses.push("NOT EXISTS (SELECT 1 FROM campaign_leads cx WHERE cx.lead_id = l.id AND cx.campaign_id = ?)");
     params.push(filter.not_in_campaign);
+  }
+  if (filter.available) {
+    clauses.push(
+      "NOT EXISTS (SELECT 1 FROM campaign_leads ax JOIN campaigns ac ON ac.id = ax.campaign_id WHERE ax.lead_id = l.id AND ac.status IN ('draft','ready','in_progress','paused'))",
+    );
   }
   if (filter.ids) {
     if (filter.ids.length === 0) clauses.push("0");
@@ -330,6 +337,7 @@ export function registerWhatsAppOpened(
       if (cl.campaign_status !== "in_progress") {
         throw new HttpError(409, "A campanha precisa estar em andamento para registrar contatos.");
       }
+      assertLeadLotOpen(db, input.campaignId, input.leadId, nowDate);
       assertCampaignCanSend(db, input.campaignId, nowDate);
       previous = cl.contact_status;
       current = previous === "not_contacted" ? "whatsapp_opened" : previous;
@@ -378,6 +386,7 @@ export function prepareWhatsAppSend(
   if (input.campaignId) {
     const cl = getCampaignLead(db, input.campaignId, input.leadId);
     if (cl.campaign_status !== "in_progress") throw new HttpError(409, "A campanha precisa estar em andamento para enviar mensagens.");
+    assertLeadLotOpen(db, input.campaignId, input.leadId, input.now ?? new Date());
     assertCampaignCanSend(db, input.campaignId, input.now ?? new Date());
     const c = db.prepare("SELECT message_template, message_template_2, message_template_3 FROM campaigns WHERE id = ?").get(input.campaignId) as {
       message_template: string;

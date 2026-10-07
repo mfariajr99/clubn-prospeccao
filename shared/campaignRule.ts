@@ -18,7 +18,7 @@ export interface CampaignRuleView {
 }
 
 export const DEFAULT_SEND_LIMIT = 30;
-export const DEFAULT_SEND_WINDOW_HOURS = 6;
+export const DEFAULT_SEND_WINDOW_HOURS = 12;
 export const MAX_SEND_LIMIT = 500;
 export const MAX_SEND_WINDOW_HOURS = 168; // one week
 
@@ -99,4 +99,41 @@ export function ruleCapacity(rule: { limit: number | null; window_hours: number 
   if (hours <= 0) return 0;
   // what is left in the current window + full windows after it
   return (rule.remaining ?? 0) + Math.floor(hours / rule.window_hours) * rule.limit;
+}
+
+// ---------------- Lots ("lotes"): the base split in groups, one group per window ----------------
+export const DEFAULT_LOT_SIZE = 30;
+export const DEFAULT_LOT_HOURS = 12;
+
+export interface LotSummary {
+  number: number;
+  start: string;
+  end: string;
+  total: number;
+  sent: number;
+  replied: number;
+}
+
+export interface LotsView {
+  size: number;
+  hours: number;
+  total_lots: number;
+  /** Lot whose window contains now (null before the first or after the last). */
+  current: number | null;
+  next_start: string | null;
+  lots: LotSummary[];
+  /** Suggested spacing so the lot is spread over its whole window. */
+  gap_minutes: number;
+  /** When the next message of the current lot is suggested (spacing guide; the operator still clicks). */
+  suggested_next_at: string | null;
+}
+
+export function lotWindow(startIso: string, hours: number, n: number): { start: string; end: string } {
+  const start = Date.parse(startIso) + (n - 1) * hours * 3600_000;
+  return { start: new Date(start).toISOString(), end: new Date(start + hours * 3600_000).toISOString() };
+}
+
+/** Lot number whose window contains `now` (may be > total when finished, < 1 before start). */
+export function lotAt(startIso: string, hours: number, now: Date): number {
+  return Math.floor((now.getTime() - Date.parse(startIso)) / (hours * 3600_000)) + 1;
 }
