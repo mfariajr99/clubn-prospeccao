@@ -101,6 +101,7 @@ test("importação com linhas válidas, inválidas e duplicadas → campanha →
   await expect(page.getByText(/Variáveis desconhecidas não serão substituídas/)).toBeVisible();
   await page.getByLabel("Mensagem 1 do WhatsApp").fill("Olá, {{nome_estabelecimento}}! O Club’n chegou em {{cidade}}/{{estado}} & queremos falar com o {{segmento}} de vocês.");
   await expect(page.getByTestId("message-preview")).toContainText("Olá, Café Exemplo! O Club’n chegou em Cidade Exemplo/SP");
+  await page.getByRole("button", { name: "Regra simples" }).click(); // start now, without lots
   await page.getByLabel("Status", { exact: true }).selectOption("ready");
   await page.getByRole("button", { name: "Criar campanha" }).click();
   await expect(page.getByRole("heading", { name: `Mercados Joinville ${tag}` })).toBeVisible();
@@ -252,9 +253,12 @@ test("visão geral acompanha campanhas (semana e meta de 20%), regra de disparo,
   await noHorizontalScroll(page);
 
   await page.goto("/campanhas/nova");
-  await expect(page.getByLabel("Até quantas mensagens")).toHaveValue("30");
-  await expect(page.getByLabel("A cada (horas)")).toHaveValue("6");
-  await expect(page.getByTestId("rule-summary")).toContainText("Até 30 mensagens a cada 6 horas");
+  // lots are the default: 30 leads every 12 hours, starting at the next round hour
+  await expect(page.getByLabel(/Leads por lote/)).toHaveValue("30");
+  await expect(page.getByLabel(/Um lote a cada/)).toHaveValue("12");
+  await expect(page.getByTestId("lots-preview")).toContainText("um a cada 12 horas");
+  await page.getByRole("button", { name: "Regra simples" }).click();
+  await expect(page.getByTestId("rule-summary")).toContainText("Até 30 mensagens a cada 12 horas");
   await page.getByLabel("Agendar o início desta campanha").check();
   await expect(page.getByLabel(/^Início/)).toBeVisible();
   await noHorizontalScroll(page);
