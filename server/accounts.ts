@@ -27,6 +27,8 @@ export interface TenantResources {
 }
 export interface Tenant extends TenantResources {
   router: ApiRouter;
+  /** Stable identifier of the client workspace (used for its WhatsApp sessions). */
+  key: string;
 }
 
 interface AccountRow {
@@ -97,7 +99,7 @@ export function clientMetrics(db: DB, now = new Date()): ClientMetrics {
     leads: one("SELECT COUNT(*) AS c FROM leads"),
     campaigns: one("SELECT COUNT(*) AS c FROM campaigns"),
     campaigns_in_progress: one("SELECT COUNT(*) AS c FROM campaigns WHERE status = 'in_progress'"),
-    whatsapp_opened: one("SELECT COUNT(*) AS c FROM contact_history WHERE event_type = 'whatsapp_opened'"),
+    whatsapp_opened: one("SELECT COUNT(*) AS c FROM contact_history WHERE event_type IN ('whatsapp_opened','whatsapp_sent')"),
     contacted: one(`SELECT COUNT(*) AS c FROM leads WHERE contact_status IN (${CONTACTED})`),
     replied: one(`SELECT COUNT(*) AS c FROM leads WHERE contact_status IN (${REPLIED})`),
     interested: one("SELECT COUNT(*) AS c FROM leads WHERE contact_status IN ('interested','partnership')"),
@@ -158,7 +160,11 @@ export function createAccounts(mainDb: DB, options: AccountsOptions) {
     const account = mustRow(accountId);
     const resources = options.openTenant({ id: account.id, storageKey: account.storage_key });
     initClientDb(resources.db, account.name);
-    const t: Tenant = { ...resources, router: createApiRouter(resources.db, resources.previews, { canManageUsers: false }) };
+    const t: Tenant = {
+      ...resources,
+      key: `cliente-${account.id}-${account.storage_key}`,
+      router: createApiRouter(resources.db, resources.previews, { canManageUsers: false }),
+    };
     tenants.set(accountId, t);
     return t;
   }

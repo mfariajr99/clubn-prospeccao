@@ -109,6 +109,7 @@ export interface ContactHistoryEntry {
   previous_status: ContactStatus | null;
   new_status: ContactStatus;
   notes: string | null;
+  event_type?: "status_change" | "whatsapp_opened" | "whatsapp_sent";
   message_type?: number | null;
   changed_by: number | null;
   changed_by_name?: string | null;
@@ -261,4 +262,21 @@ export interface ClientCampaignNumbers {
 
 export interface ClientAccountDetail extends ClientAccountSummary {
   campaigns: ClientCampaignNumbers[];
+}
+
+// ---------------- WhatsApp "conexão própria" (one number per operator) ----------------
+export type WhatsAppState = "disconnected" | "connecting" | "qr" | "pairing" | "connected";
+
+export interface WhatsAppStatus {
+  state: WhatsAppState;
+  /** QR Code image (data URL) while waiting for the scan. */
+  qr: string | null;
+  /** 8-character code for "Conectar com número de telefone". */
+  pairing_code: string | null;
+  phone: string | null;
+  name: string | null;
+  error: string | null;
+  updated_at: string;
+  /** Demo build: connection is simulated, nothing is sent. */
+  simulated?: boolean;
 }

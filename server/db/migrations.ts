@@ -223,4 +223,31 @@ CREATE TABLE client_accounts (
 );
 `,
   },
+  {
+    id: 4,
+    name: "contact_history_whatsapp_sent",
+    sql: `
+-- Messages sent directly through the operator's connected WhatsApp are
+-- recorded as 'whatsapp_sent'. SQLite cannot change a CHECK constraint, so the
+-- table is rebuilt (nothing references contact_history).
+CREATE TABLE contact_history_new (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  lead_id INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+  campaign_id INTEGER REFERENCES campaigns(id) ON DELETE SET NULL,
+  event_type TEXT NOT NULL DEFAULT 'status_change' CHECK (event_type IN ('status_change','whatsapp_opened','whatsapp_sent')),
+  previous_status TEXT,
+  new_status TEXT NOT NULL,
+  notes TEXT,
+  changed_by INTEGER REFERENCES users(id),
+  changed_at TEXT NOT NULL DEFAULT ${NOW},
+  message_type INTEGER
+);
+INSERT INTO contact_history_new (id, lead_id, campaign_id, event_type, previous_status, new_status, notes, changed_by, changed_at, message_type)
+  SELECT id, lead_id, campaign_id, event_type, previous_status, new_status, notes, changed_by, changed_at, message_type FROM contact_history;
+DROP TABLE contact_history;
+ALTER TABLE contact_history_new RENAME TO contact_history;
+CREATE INDEX contact_history_lead ON contact_history(lead_id, changed_at);
+CREATE INDEX contact_history_campaign ON contact_history(campaign_id);
+`,
+  },
 ];

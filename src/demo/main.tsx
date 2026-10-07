@@ -8,13 +8,14 @@ import { AuthGate } from "../components/AuthGate";
 import { QuotaProvider } from "../components/Quota";
 import { SessionProvider } from "../components/Session";
 import { ToastProvider } from "../components/Toast";
+import { WhatsAppProvider } from "../components/WhatsAppStatus";
 import { resetDemoData, startDemoServer } from "./demoServer";
 
 function DemoBanner() {
   return (
     <div className="demo-banner" role="note">
       <span>
-        <strong>Versão de demonstração.</strong> Dados fictícios, salvos só neste navegador. “Enviar mensagem” abre o WhatsApp de verdade: use um número seu para testar.
+        <strong>Versão de demonstração.</strong> Dados fictícios, salvos só neste navegador. Sem WhatsApp conectado, “Enviar mensagem” abre o WhatsApp de verdade (use um número seu); a conexão própria é simulada aqui.
       </span>
       <button type="button" className="btn xs secondary" onClick={resetDemoData}>
         <RotateCcw size={13} /> Restaurar dados
@@ -36,7 +37,9 @@ startDemoServer()
             <AuthGate>
               <SessionProvider>
                 <QuotaProvider>
-                  <App />
+                  <WhatsAppProvider>
+                    <App />
+                  </WhatsAppProvider>
                 </QuotaProvider>
               </SessionProvider>
             </AuthGate>

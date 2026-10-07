@@ -1,3 +1,4 @@
+import { DEFAULT_WHATSAPP_MESSAGES } from "./constants.js";
 import { normalizePhone } from "./phone.js";
 import { BRAZIL_STATES } from "./states.js";
 
@@ -97,4 +98,15 @@ export function buildWhatsAppUrl(phone: string | null | undefined, message: stri
 
 export function stateName(uf: string | null | undefined): string {
   return (uf && BRAZIL_STATES[uf]) || uf || "";
+}
+
+/**
+ * Picks the campaign message for the rotation type (1, 2 or 3). Campaigns created
+ * before the 3-message rule fall back to message 1; outside campaigns, the three
+ * default Club'n messages rotate the same way.
+ */
+export function pickTemplate(templates: (string | null | undefined)[] | null | undefined, type: number): string {
+  const list = (templates ?? []).map((t) => (t ?? "").trim());
+  if (!list[0]) return DEFAULT_WHATSAPP_MESSAGES[(type - 1) % DEFAULT_WHATSAPP_MESSAGES.length];
+  return list[type - 1] || list[0];
 }

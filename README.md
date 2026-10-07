@@ -36,6 +36,8 @@ npm start                   # serve API e front-end em http://localhost:3333
 | `DATABASE_FILE` | `data/clubn.db` | Arquivo SQLite principal (os bancos dos clientes ficam em `accounts/` na mesma pasta) |
 | `APP_PASSWORD` | — | Senha do administrador; quando definida, todo o sistema exige login |
 | `APP_ADMIN_LOGIN` | `admin` | Login do administrador |
+| `WHATSAPP_SESSIONS_DIR` | `data/whatsapp` | Onde ficam as sessões do WhatsApp conectado |
+| `WHATSAPP_LOG_LEVEL` | `silent` | Log da conexão WhatsApp (`warn`, `info`, `debug`) |
 | `PREVIEW_TTL_DAYS` | `7` | Validade do cache das prévias |
 | `PREVIEW_REFRESH_COOLDOWN_SECONDS` | `60` | Intervalo mínimo entre atualizações manuais da mesma prévia |
 | `PREVIEW_SCREENSHOTS` | `off` | `on` ativa a captura visual com Chromium headless (Playwright) |
@@ -50,6 +52,14 @@ npm start                   # serve API e front-end em http://localhost:3333
 4. Após o deploy, abra o endereço `.onrender.com`, entre com a senha e adicione os operadores em **Operador → + Adicionar operador**.
 
 Com `APP_PASSWORD` definido, toda a API exige login (cookie de sessão HttpOnly, 14 dias, tentativas limitadas). Sem ele (desenvolvimento local), o acesso de administrador é livre.
+
+## WhatsApp conectado (conexão própria)
+
+- Menu **Conexão WhatsApp**: cada operador (e cada cliente) conecta o próprio número por **QR Code** ou **código de conexão** (WhatsApp → Aparelhos conectados → Conectar aparelho), como no WhatsApp Web. Implementado com [Baileys](https://github.com/WhiskeySockets/Baileys) — **não é a API oficial da Meta**: o WhatsApp pode restringir números que enviam mensagens em excesso.
+- Com o número conectado, cada clique em **Enviar mensagem** envia **uma** mensagem direto (rotação 1 → 2 → 3, sessões 30/15/30/15 e limite de 90/dia continuam valendo), registra o evento `whatsapp_sent` e marca o contato como **Mensagem enviada**. Nada é enviado em lote, fila ou agendamento.
+- Sem conexão, o botão continua abrindo o WhatsApp do aparelho (wa.me) e registra apenas “WhatsApp aberto”.
+- As sessões ficam em `data/whatsapp/` (disco persistente do Render, `WHATSAPP_SESSIONS_DIR` para mudar) e reconectam sozinhas após um novo deploy. “Desconectar” encerra a sessão e apaga os dados dela.
+- Na versão de demonstração a conexão é simulada e nada é enviado.
 
 ## Acessos: administrador e novos usuários
 

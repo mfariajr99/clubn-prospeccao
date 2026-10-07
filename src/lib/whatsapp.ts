@@ -1,9 +1,8 @@
-// Manual, individual WhatsApp opening. There is NO queue, batch, scheduling or
-// automatic sending anywhere in this application: every message is opened by a
-// click of the operator (a real link to wa.me) and actually sent — or not —
-// inside WhatsApp.
+// Individual WhatsApp sending. There is NO queue, batch or scheduling anywhere:
+// every message comes from one click of the operator — sent directly through the
+// operator's connected WhatsApp, or (when not connected) opened via a wa.me link.
 
-import { DEFAULT_WHATSAPP_MESSAGE, DEFAULT_WHATSAPP_MESSAGES } from "../../shared/constants";
+import { DEFAULT_WHATSAPP_MESSAGE } from "../../shared/constants";
 import { buildCampaignMessage, buildWhatsAppUrl, type TemplateLead } from "../../shared/template";
 
 export interface WhatsAppTarget extends TemplateLead {
@@ -24,13 +23,4 @@ export function whatsappLinkFor(lead: WhatsAppTarget, template: string | null | 
   return { ok: true, url: link.url };
 }
 
-/**
- * Picks the campaign message for the rotation type (1, 2 or 3). Campaigns created
- * before the 3-message rule fall back to message 1; outside campaigns, the three
- * default Club'n messages rotate the same way.
- */
-export function pickTemplate(templates: (string | null | undefined)[] | null | undefined, type: number): string {
-  const list = (templates ?? []).map((t) => (t ?? "").trim());
-  if (!list[0]) return DEFAULT_WHATSAPP_MESSAGES[(type - 1) % DEFAULT_WHATSAPP_MESSAGES.length];
-  return list[type - 1] || list[0];
-}
+export { pickTemplate } from "../../shared/template";

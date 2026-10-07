@@ -11,6 +11,7 @@ import { AuthGate } from "./components/AuthGate";
 import { QuotaProvider } from "./components/Quota";
 import { SessionProvider } from "./components/Session";
 import { ToastProvider } from "./components/Toast";
+import { WhatsAppProvider } from "./components/WhatsAppStatus";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
@@ -19,7 +20,9 @@ createRoot(document.getElementById("root")!).render(
         <AuthGate>
           <SessionProvider>
             <QuotaProvider>
-              <App />
+              <WhatsAppProvider>
+                <App />
+              </WhatsAppProvider>
             </QuotaProvider>
           </SessionProvider>
         </AuthGate>

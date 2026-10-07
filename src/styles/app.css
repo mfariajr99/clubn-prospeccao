@@ -603,3 +603,42 @@ a.cell-title:hover { text-decoration: underline; }
   .stat .stat-icon { width: 34px; height: 34px; }
   .stat .stat-label { overflow-wrap: normal; word-break: normal; hyphens: auto; }
 }
+
+/* ---------------- WhatsApp "conexão própria" ---------------- */
+.wa-pill {
+  display: inline-flex; align-items: center; gap: 7px; height: 40px; padding: 0 14px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-sm);
+  color: var(--text-2); font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap;
+}
+.wa-pill:hover { border-color: var(--border-strong); color: var(--text); }
+.wa-pill .wa-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+.wa-pill.on .wa-dot { background: var(--whatsapp); box-shadow: 0 0 0 3px var(--success-bg); }
+.wa-pill.wait .wa-dot { background: var(--warning); }
+.wa-pill.off { color: var(--danger); }
+.wa-pill.off .wa-dot { background: var(--danger); }
+.tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--border); margin-bottom: 18px; flex-wrap: wrap; }
+.tab {
+  display: inline-flex; align-items: center; gap: 7px; padding: 10px 14px; border: 0; background: none; cursor: pointer;
+  font: inherit; font-weight: 600; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.tab.active { color: var(--text); border-bottom-color: var(--navy-800); }
+.tab:disabled { cursor: not-allowed; opacity: .6; }
+.wa-connect-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 320px); gap: 24px; align-items: start; }
+.wa-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; line-height: 1.5; }
+.wa-connect-box {
+  display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center;
+  padding: 18px; border: 1px dashed var(--border-strong); border-radius: 16px; background: var(--bg); min-height: 220px; justify-content: center;
+}
+.wa-connect-box .field { width: 100%; text-align: left; }
+.wa-qr { width: 240px; height: 240px; max-width: 100%; border-radius: 12px; background: #fff; padding: 8px; image-rendering: pixelated; }
+.wa-code { font-size: 32px; font-weight: 700; letter-spacing: .14em; color: var(--navy-800); background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 14px 18px; }
+.wa-waiting { display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--muted); }
+.wa-connected-head { display: flex; align-items: center; gap: 14px; }
+.wa-big-icon { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; }
+.wa-big-icon.on { background: var(--success-bg); color: var(--success); }
+@media (max-width: 767px) {
+  .wa-connect-grid { grid-template-columns: 1fr; }
+  .wa-pill { height: 36px; padding: 0 10px; }
+  .wa-pill .wa-pill-text, .wa-pill svg { display: none; }
+  .wa-code { font-size: 26px; }
+}

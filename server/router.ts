@@ -161,6 +161,15 @@ const evaluationSchema = z.object({
  * Framework-agnostic API: the same routes are served by Express (server/app.ts)
  * and by the in-browser demo build (src/demo), so both behave identically.
  */
+/** Resolves the current operator (header X-User-Id; falls back to the first user). */
+export function resolveOperator(db: DB, userId: unknown): User {
+  const id = Number(userId);
+  let user = Number.isInteger(id) && id > 0 ? (db.prepare("SELECT id, name, email FROM users WHERE id = ?").get(id) as User | undefined) : undefined;
+  if (!user) user = db.prepare("SELECT id, name, email FROM users ORDER BY id LIMIT 1").get() as User | undefined;
+  if (!user) throw new HttpError(500, "Nenhum usuário cadastrado. Execute npm run db:migrate.");
+  return user;
+}
+
 export interface ApiRouterOptions {
   /** Only the master workspace may add operators. Client accounts never create logins. */
   canManageUsers?: boolean;
@@ -424,14 +433,7 @@ export function createApiRouter(db: DB, previews: PreviewProvider, options: ApiR
   });
 
 
-  /** Resolves the current operator (header X-User-Id; falls back to the first user). */
-  function resolveUser(userId: unknown): User {
-    const id = Number(userId);
-    let user = Number.isInteger(id) && id > 0 ? (db.prepare("SELECT id, name, email FROM users WHERE id = ?").get(id) as User | undefined) : undefined;
-    if (!user) user = db.prepare("SELECT id, name, email FROM users ORDER BY id LIMIT 1").get() as User | undefined;
-    if (!user) throw new HttpError(500, "Nenhum usuário cadastrado. Execute npm run db:migrate.");
-    return user;
-  }
+  const resolveUser = (userId: unknown) => resolveOperator(db, userId);
 
   /** Dispatches a request. `path` is relative to /api (e.g. "/leads/3"). Throws HttpError. */
   function handle(method: string, path: string, query: Query, body: unknown, userId: unknown): ApiResult {

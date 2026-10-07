@@ -7,8 +7,10 @@ import { createAccounts, createAdminRouter, type Identity, type PasswordHasher }
 import { ensureDefaultUser, runMigrations, type DB } from "../../server/db/core";
 import { seed } from "../../server/db/seed";
 import { HttpError } from "../../server/lib/http";
-import { createApiRouter, type ApiResult } from "../../server/router";
-import type { AuthStatus } from "../../shared/types";
+import QRCode from "qrcode";
+import { createApiRouter, resolveOperator, type ApiResult } from "../../server/router";
+import { prepareWhatsAppSend, registerWhatsAppSent } from "../../server/services/leads";
+import type { AuthStatus, WhatsAppStatus } from "../../shared/types";
 import { adaptSqlJs } from "./sqljsAdapter";
 import { createDemoPreviews } from "./demoPreviews";
 
@@ -156,6 +158,61 @@ export async function startDemoServer(): Promise<void> {
     return null;
   }
 
+  // Simulated WhatsApp connection: the demo never talks to WhatsApp.
+  const waSessions = new Map<string, WhatsAppStatus>();
+  let demoQr: string | null = null;
+  void QRCode.toDataURL("Club'n Prospecção — demonstração: conexão simulada", { margin: 1, width: 280 })
+    .then((url) => (demoQr = url))
+    .catch(() => undefined);
+  const waBlank = (): WhatsAppStatus => ({ state: "disconnected", qr: null, pairing_code: null, phone: null, name: null, error: null, updated_at: new Date().toISOString(), simulated: true });
+
+  function whatsappRoute(method: string, path: string, body: Record<string, unknown>, userId: string | null): ApiResult | null {
+    if (!identity || (!path.startsWith("/whatsapp/") && !/^\/leads\/\d+\/whatsapp-send$/.test(path))) return null;
+    const ws = identity.role === "client" ? accounts.tenant(identity.accountId) : { db, key: "main" };
+    const user = resolveOperator(ws.db, userId);
+    const key = `${ws.key}/${user.id}`;
+    const current = waSessions.get(key) ?? waBlank();
+    const save = (patch: Partial<WhatsAppStatus>) => {
+      const next = { ...current, ...patch, updated_at: new Date().toISOString() };
+      waSessions.set(key, next);
+      return { status: 200, body: next };
+    };
+    if (path === "/whatsapp/status") return { status: 200, body: current };
+    if (path === "/whatsapp/connect" && method === "POST") {
+      if (body.method === "code") {
+        const digits = String(body.phone ?? "").replace(/\D/g, "");
+        if (digits.length < 12) throw new HttpError(422, "Informe o número do WhatsApp com DDI e DDD, ex.: 55 11 91234-5678.", { fields: { phone: "Número inválido." } });
+        return save({ state: "pairing", pairing_code: "DEMO-1234", qr: null, error: null });
+      }
+      return save({ state: "qr", qr: demoQr, pairing_code: null, error: null });
+    }
+    if (path === "/whatsapp/simulate-link" && method === "POST") {
+      return save({ state: "connected", qr: null, pairing_code: null, phone: "5511900000000", name: user.name, error: null });
+    }
+    if (path === "/whatsapp/disconnect" && method === "POST") {
+      waSessions.delete(key);
+      return { status: 200, body: waBlank() };
+    }
+    const send = /^\/leads\/(\d+)\/whatsapp-send$/.exec(path);
+    if (send && method === "POST") {
+      if (current.state !== "connected") {
+        throw new HttpError(409, "Seu WhatsApp não está conectado. Conecte em “Conexão WhatsApp” ou envie pelo WhatsApp do aparelho.", { code: "WA_NOT_CONNECTED" });
+      }
+      const leadId = Number(send[1]);
+      const campaignId = typeof body.campaign_id === "number" ? body.campaign_id : null;
+      const prepared = prepareWhatsAppSend(ws.db, { leadId, campaignId, userId: user.id });
+      const result = registerWhatsAppSent(ws.db, {
+        leadId,
+        campaignId,
+        userId: user.id,
+        messageType: prepared.messageType,
+        note: `Mensagem ${prepared.messageType} enviada (simulação da demonstração: nada foi enviado de verdade)`,
+      });
+      return { status: 200, body: { ...result, sent: true, simulated: true, establishment_name: prepared.establishment_name } };
+    }
+    return null;
+  }
+
   function dispatch(method: string, path: string, query: Record<string, unknown>, body: unknown, userId: string | null): ApiResult {
     const auth = authRoute(method, path, (body ?? {}) as Record<string, unknown>);
     if (auth) return auth;
@@ -165,6 +222,8 @@ export async function startDemoServer(): Promise<void> {
       writeIdentity(null);
     }
     if (!identity) return { status: 401, body: { error: "Faça login para continuar.", code: "AUTH_REQUIRED" } };
+    const wa = whatsappRoute(method, path, (body ?? {}) as Record<string, unknown>, userId);
+    if (wa) return wa;
     if (path.startsWith("/admin/")) {
       if (identity.role !== "admin") throw new HttpError(403, "Acesso restrito ao administrador.");
       return adminRouter.handle(method, path.slice("/admin".length), query, body);

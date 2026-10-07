@@ -7,8 +7,14 @@ import { createAccounts, createAdminRouter, type Identity, type TenantResources 
 import { createAuth, type AuthOptions } from "./auth.js";
 import { openDatabase } from "./db/connection.js";
 import { nodePasswordHasher } from "./lib/password.js";
-import { createApiRouter } from "./router.js";
+import { createApiRouter, resolveOperator } from "./router.js";
+import { prepareWhatsAppSend, registerWhatsAppSent } from "./services/leads.js";
 import { PreviewService } from "./services/preview/previewService.js";
+import { WhatsAppManager } from "./whatsapp/manager.js";
+import { baileysDriver } from "./whatsapp/baileysDriver.js";
+import os from "node:os";
+import { z } from "zod";
+import { parseBody } from "./lib/http.js";
 
 export interface AppDeps {
   db: DB;
@@ -18,9 +24,12 @@ export interface AppDeps {
   /** Opens the isolated database of a client account (default: in memory, for tests). */
   openTenant?: (account: { id: number; storageKey: string }) => TenantResources;
   adminLogin?: string;
+  /** WhatsApp connections (one per operator). Default: sessions in a temp folder. */
+  whatsapp?: WhatsAppManager;
 }
 
-export function createApp({ db, previews, staticDir, auth: authOptions, openTenant, adminLogin }: AppDeps) {
+export function createApp({ db, previews, staticDir, auth: authOptions, openTenant, adminLogin, whatsapp: whatsappDep }: AppDeps) {
+  const whatsapp = whatsappDep ?? new WhatsAppManager(path.join(os.tmpdir(), `clubn-whatsapp-${process.pid}`), baileysDriver);
   const app = express();
   const accounts = createAccounts(db, {
     hasher: nodePasswordHasher,
@@ -39,7 +48,13 @@ export function createApp({ db, previews, staticDir, auth: authOptions, openTena
   /** Master workspace for the admin; the client's own isolated workspace otherwise. */
   const workspace = (res: Response) => {
     const identity = res.locals.identity as Identity;
-    return identity.role === "client" ? accounts.tenant(identity.accountId) : { db, previews, router };
+    return identity.role === "client" ? accounts.tenant(identity.accountId) : { db, previews, router, key: "main" };
+  };
+  /** The selected operator and the key of their WhatsApp session. */
+  const operator = (req: Request, res: Response) => {
+    const ws = workspace(res);
+    const user = resolveOperator(ws.db, req.header("x-user-id"));
+    return { ws, user, key: WhatsAppManager.key(ws.key, user.id) };
   };
   app.disable("x-powered-by");
   app.use(express.json({ limit: "25mb" }));
@@ -58,6 +73,30 @@ export function createApp({ db, previews, staticDir, auth: authOptions, openTena
   app.post("/api/auth/login", auth.login);
   app.post("/api/auth/logout", auth.logout);
   app.use("/api", auth.guard);
+
+  // ---------------- WhatsApp "conexão própria" (one number per operator) ----------------
+  app.get("/api/whatsapp/status", (req: Request, res: Response) => {
+    res.json(whatsapp.status(operator(req, res).key));
+  });
+  app.post("/api/whatsapp/connect", async (req: Request, res: Response) => {
+    const body = parseBody(z.object({ method: z.enum(["qr", "code"]), phone: z.string().max(40).optional() }), req.body ?? {});
+    res.json(await whatsapp.connect(operator(req, res).key, body));
+  });
+  app.post("/api/whatsapp/disconnect", async (req: Request, res: Response) => {
+    res.json(await whatsapp.disconnect(operator(req, res).key));
+  });
+  // One click = one message, sent through the operator's connected WhatsApp.
+  // Sessions, pauses and the 1 -> 2 -> 3 rotation apply exactly as with wa.me.
+  app.post("/api/leads/:id/whatsapp-send", async (req: Request, res: Response) => {
+    const { ws, user, key } = operator(req, res);
+    const body = parseBody(z.object({ campaign_id: z.number().int().positive().nullable().optional() }), req.body ?? {});
+    const leadId = intParam(req.params.id);
+    const campaignId = body.campaign_id ?? null;
+    const prepared = prepareWhatsAppSend(ws.db, { leadId, campaignId, userId: user.id });
+    await whatsapp.send(key, prepared.phone, prepared.text);
+    const result = registerWhatsAppSent(ws.db, { leadId, campaignId, userId: user.id, messageType: prepared.messageType });
+    res.json({ ...result, sent: true, establishment_name: prepared.establishment_name });
+  });
 
   // Binary file: served only by the Node server.
   app.get("/api/previews/:id/screenshot", (req: Request, res: Response) => {

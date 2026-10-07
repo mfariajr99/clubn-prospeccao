@@ -7,11 +7,13 @@ import { CampaignBadge, EmptyState, SkeletonRows } from "../components/ui";
 import { useAsync } from "../hooks/useAsync";
 import { api } from "../lib/api";
 import { fmtNumber } from "../lib/format";
+import { formatPhone, useWhatsApp } from "../components/WhatsAppStatus";
 
 /** "Iniciar campanhas": pick a ready/in-progress campaign and work its leads one by one. */
 export default function CampaignStart() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const wa = useWhatsApp();
   const list = useAsync((s) => api.get<Paginated<Campaign>>("/campaigns", { statuses: "ready,in_progress,paused", pageSize: 100, sort: "updated_at" }, s), []);
   const selected = useAsync((s) => (id ? api.get<Campaign>(`/campaigns/${id}`, undefined, s) : Promise.resolve(null)), [id]);
   const actions = useCampaignActions((c) => {
@@ -27,7 +29,18 @@ export default function CampaignStart() {
         <div>
           <div className="breadcrumb">Campanhas</div>
           <h1>Iniciar campanhas</h1>
-          <p>Selecione uma campanha e contate cada lead individualmente. Cada clique em “Enviar mensagem” abre o WhatsApp daquele contato — nada é enviado automaticamente.</p>
+          <p>
+            Selecione uma campanha e contate cada lead individualmente.{" "}
+            {wa.connected ? (
+              <>
+                Cada clique em “Enviar mensagem” envia uma mensagem pelo seu WhatsApp conectado ({formatPhone(wa.status?.phone)}) — nunca em lote.
+              </>
+            ) : (
+              <>
+                Cada clique em “Enviar mensagem” abre o WhatsApp daquele contato. Para enviar direto pelo sistema, <Link to="/whatsapp">conecte seu WhatsApp</Link>.
+              </>
+            )}
+          </p>
         </div>
       </div>
 

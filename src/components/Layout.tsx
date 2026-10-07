@@ -1,9 +1,10 @@
-import { ChevronDown, LayoutGrid, LogOut, Megaphone, Menu, PanelLeftClose, PanelLeftOpen, UserCog, Users, X } from "lucide-react";
+import { ChevronDown, LayoutGrid, LogOut, Megaphone, Menu, PanelLeftClose, PanelLeftOpen, Smartphone, UserCog, Users, X } from "lucide-react";
 import { logout, useAuth } from "./AuthGate";
 import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { initials } from "../lib/format";
 import { QuotaBadge } from "./Quota";
+import { WhatsAppPill } from "./WhatsAppStatus";
 import { useSession } from "./Session";
 import { useToast } from "./Toast";
 import { Field, Modal } from "./ui";
@@ -91,6 +92,10 @@ function Navigation({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?
           </div>
         );
       })}
+      <NavLink to="/whatsapp" className="nav-link" onClick={onNavigate} title={collapsed ? "Conexão WhatsApp" : undefined}>
+        <Smartphone size={19} aria-hidden />
+        <span className="nav-label">Conexão WhatsApp</span>
+      </NavLink>
       {role === "admin" && (
         <NavLink to="/usuarios" className="nav-link" onClick={onNavigate} title={collapsed ? "Novos usuários" : undefined}>
           <UserCog size={19} aria-hidden />
@@ -188,6 +193,7 @@ export function Layout() {
             <img className="mobile-logo" src="/logo-clubn.png" alt="Club’n" width={85} height={24} />
           </div>
           <div className="topbar-right">
+          <WhatsAppPill />
           <QuotaBadge />
           <div className="user-chip">
             {isClient ? (

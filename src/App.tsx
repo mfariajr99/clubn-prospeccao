@@ -13,6 +13,7 @@ const CampaignsList = lazy(() => import("./pages/CampaignsList"));
 const CampaignForm = lazy(() => import("./pages/CampaignForm"));
 const CampaignDetail = lazy(() => import("./pages/CampaignDetail"));
 const CampaignStart = lazy(() => import("./pages/CampaignStart"));
+const WhatsAppConnect = lazy(() => import("./pages/WhatsAppConnect"));
 const AdminClients = lazy(() => import("./pages/AdminClients"));
 const AdminClientDetail = lazy(() => import("./pages/AdminClientDetail"));
 
@@ -34,6 +35,7 @@ export default function App() {
           <Route path="campanhas/iniciar/:id" element={<CampaignStart />} />
           <Route path="campanhas/:id" element={<CampaignDetail />} />
           <Route path="campanhas/:id/editar" element={<CampaignForm />} />
+          <Route path="whatsapp" element={<WhatsAppConnect />} />
           {role === "admin" && <Route path="usuarios" element={<AdminClients />} />}
           {role === "admin" && <Route path="usuarios/:id" element={<AdminClientDetail />} />}
           <Route path="*" element={<EmptyState title="Página não encontrada" action={<Link className="btn sm" to="/">Ir para a visão geral</Link>} />} />

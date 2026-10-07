@@ -7,7 +7,8 @@ import { comparisonKey } from "../../shared/text.js";
 import { nowIso, type DB } from "../db/core.js";
 import { HttpError, notFound } from "../lib/http.js";
 import type { QuotaView } from "../../shared/sendQuota.js";
-import { consumeQuota } from "./quota.js";
+import { buildCampaignMessage, buildWhatsAppUrl, pickTemplate } from "../../shared/template.js";
+import { consumeQuota, getQuota } from "./quota.js";
 
 export interface LeadFilter {
   q?: string;
@@ -355,6 +356,86 @@ export function registerWhatsAppOpened(
        VALUES (?, ?, 'whatsapp_opened', ?, ?, ?, ?, ?, ?)`,
     ).run(input.leadId, input.campaignId ?? null, previous, current, `WhatsApp aberto pelo operador (mensagem ${messageType})`, input.userId, now, messageType);
     return { previous, current, opened_at: now, message_type: messageType, quota: consumed.quota };
+  })();
+}
+
+/** Statuses that a confirmed send moves forward to "Mensagem enviada". */
+const BEFORE_SENT: ContactStatus[] = ["not_contacted", "whatsapp_opened"];
+
+/**
+ * Checks everything needed to send ONE message through the operator's connected
+ * WhatsApp and returns the text (message 1, 2 or 3 of the rotation). Writes nothing.
+ */
+export function prepareWhatsAppSend(
+  db: DB,
+  input: { leadId: number; campaignId?: number | null; userId: number; now?: Date },
+): { phone: string; text: string; messageType: number; establishment_name: string } {
+  const lead = getLead(db, input.leadId);
+  if (!lead.whatsapp_valid) throw new HttpError(422, "O WhatsApp deste lead é inválido. Corrija o cadastro para enviar a mensagem.");
+  let templates: string[] | null = null;
+  if (input.campaignId) {
+    const cl = getCampaignLead(db, input.campaignId, input.leadId);
+    if (cl.campaign_status !== "in_progress") throw new HttpError(409, "A campanha precisa estar em andamento para enviar mensagens.");
+    const c = db.prepare("SELECT message_template, message_template_2, message_template_3 FROM campaigns WHERE id = ?").get(input.campaignId) as {
+      message_template: string;
+      message_template_2: string;
+      message_template_3: string;
+    };
+    templates = [c.message_template, c.message_template_2, c.message_template_3];
+  }
+  const quota = getQuota(db, input.userId, input.now ?? new Date());
+  if (quota.locked) {
+    throw new HttpError(429, "Limite de envios desta sessão atingido. Aguarde o fim da pausa para enviar novamente.", { quota });
+  }
+  const text = buildCampaignMessage(pickTemplate(templates, quota.nextMessageType), lead);
+  const link = buildWhatsAppUrl(lead.whatsapp, text);
+  if (!link.ok) throw new HttpError(422, `${link.error} Corrija o cadastro para enviar a mensagem.`);
+  return { phone: link.phone, text, messageType: quota.nextMessageType, establishment_name: lead.establishment_name };
+}
+
+/**
+ * Records a message actually delivered to WhatsApp by the connected number:
+ * counts it in the operator's quota and moves the contact to "Mensagem enviada".
+ */
+export function registerWhatsAppSent(
+  db: DB,
+  input: { leadId: number; campaignId?: number | null; userId: number; messageType: number; now?: Date; note?: string },
+): { previous: ContactStatus; current: ContactStatus; opened_at: string; message_type: number; quota: QuotaView } {
+  return db.transaction(() => {
+    const nowDate = input.now ?? new Date();
+    const now = nowDate.toISOString();
+    let previous: ContactStatus;
+    let current: ContactStatus;
+    if (input.campaignId) {
+      const cl = getCampaignLead(db, input.campaignId, input.leadId);
+      previous = cl.contact_status;
+      current = BEFORE_SENT.includes(previous) ? "message_sent" : previous;
+      db.prepare(
+        "UPDATE campaign_leads SET contact_status = ?, whatsapp_opened_at = COALESCE(whatsapp_opened_at, ?), last_contact_at = ?, updated_at = ? WHERE id = ?",
+      ).run(current, now, now, now, cl.id);
+      db.prepare("UPDATE campaigns SET updated_at = ? WHERE id = ?").run(now, input.campaignId);
+    } else {
+      previous = leadStatus(db, input.leadId);
+      current = BEFORE_SENT.includes(previous) ? "message_sent" : previous;
+    }
+    const consumed = consumeQuota(db, input.userId, nowDate);
+    if (BEFORE_SENT.includes(leadStatus(db, input.leadId))) {
+      db.prepare("UPDATE leads SET contact_status = 'message_sent', updated_at = ? WHERE id = ?").run(now, input.leadId);
+    }
+    db.prepare(
+      `INSERT INTO contact_history (lead_id, campaign_id, event_type, previous_status, new_status, notes, changed_by, changed_at, message_type)
+       VALUES (?, ?, 'whatsapp_sent', ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      input.leadId,
+      input.campaignId ?? null,
+      previous,
+      current,
+      input.note ?? `Mensagem ${input.messageType} enviada pelo WhatsApp conectado`,
+      input.userId,
+      now,
+      input.messageType,
+    );
+    return { previous, current, opened_at: now, message_type: input.messageType, quota: consumed.quota };
   })();
 }
 

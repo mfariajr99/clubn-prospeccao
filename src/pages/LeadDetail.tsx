@@ -141,7 +141,13 @@ export default function LeadDetail() {
                             {CONTACT_STATUS_LABELS[h.previous_status]} → <strong>{CONTACT_STATUS_LABELS[h.new_status]}</strong>
                           </>
                         ) : (
-                          <strong>{h.notes?.startsWith("WhatsApp aberto") ? `WhatsApp aberto${h.message_type ? ` · mensagem ${h.message_type}` : ""}` : CONTACT_STATUS_LABELS[h.new_status]}</strong>
+                          <strong>
+                            {h.event_type === "whatsapp_sent"
+                              ? `Mensagem ${h.message_type ?? ""} enviada pelo WhatsApp conectado`
+                              : h.notes?.startsWith("WhatsApp aberto")
+                                ? `WhatsApp aberto${h.message_type ? ` · mensagem ${h.message_type}` : ""}`
+                                : CONTACT_STATUS_LABELS[h.new_status]}
+                          </strong>
                         )}
                       </div>
                       <div className="cell-sub">

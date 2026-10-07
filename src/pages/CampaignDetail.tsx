@@ -185,12 +185,12 @@ export default function CampaignDetail() {
                     <div>
                       <strong>{h.establishment_name}</strong>
                       <div className="small">
-                        {h.event_type === "whatsapp_opened" ? "WhatsApp aberto" : `${h.previous_status ? CONTACT_STATUS_LABELS[h.previous_status] : "—"} → ${CONTACT_STATUS_LABELS[h.new_status]}`}
+                        {h.event_type === "whatsapp_opened" ? "WhatsApp aberto" : h.event_type === "whatsapp_sent" ? "Mensagem enviada pelo WhatsApp conectado" : `${h.previous_status ? CONTACT_STATUS_LABELS[h.previous_status] : "—"} → ${CONTACT_STATUS_LABELS[h.new_status]}`}
                       </div>
                       <div className="cell-sub">
                         {fmtDateTime(h.changed_at)} · {h.changed_by_name ?? "—"}
                       </div>
-                      {h.notes && h.event_type !== "whatsapp_opened" && <div className="small">“{h.notes}”</div>}
+                      {h.notes && h.event_type === "status_change" && <div className="small">“{h.notes}”</div>}
                     </div>
                   </li>
                 ))}
