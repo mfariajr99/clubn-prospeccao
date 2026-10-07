@@ -9,6 +9,8 @@ import { openDatabase } from "./db/connection.js";
 import { nodePasswordHasher } from "./lib/password.js";
 import { createApiRouter, resolveOperator } from "./router.js";
 import { prepareWhatsAppSend, registerWhatsAppSent } from "./services/leads.js";
+import { storeWhatsAppMessage } from "./services/inbox.js";
+import { syncScheduledCampaigns } from "./services/campaignRules.js";
 import { PreviewService } from "./services/preview/previewService.js";
 import { WhatsAppManager } from "./whatsapp/manager.js";
 import { baileysDriver } from "./whatsapp/baileysDriver.js";
@@ -50,9 +52,18 @@ export function createApp({ db, previews, staticDir, auth: authOptions, openTena
     const identity = res.locals.identity as Identity;
     return identity.role === "client" ? accounts.tenant(identity.accountId) : { db, previews, router, key: "main" };
   };
+  // Messages received (or sent from the phone) go to the operator's workspace.
+  whatsapp.setMessageSink((key, messages) => {
+    const [wsKey, userPart] = key.split("/");
+    const userId = Number(userPart?.replace("user-", ""));
+    const wsDb = wsKey === "main" ? db : accounts.tenantByKey(wsKey)?.db;
+    if (!wsDb || !Number.isInteger(userId)) return;
+    for (const m of messages) storeWhatsAppMessage(wsDb, userId, m);
+  });
   /** The selected operator and the key of their WhatsApp session. */
   const operator = (req: Request, res: Response) => {
     const ws = workspace(res);
+    syncScheduledCampaigns(ws.db);
     const user = resolveOperator(ws.db, req.header("x-user-id"));
     return { ws, user, key: WhatsAppManager.key(ws.key, user.id) };
   };
@@ -85,6 +96,15 @@ export function createApp({ db, previews, staticDir, auth: authOptions, openTena
   app.post("/api/whatsapp/disconnect", async (req: Request, res: Response) => {
     res.json(await whatsapp.disconnect(operator(req, res).key));
   });
+  // "Mensagens": answer inside a conversation.
+  app.post("/api/inbox/reply", async (req: Request, res: Response) => {
+    const { ws, user, key } = operator(req, res);
+    const body = parseBody(z.object({ jid: z.string().min(3).max(200), text: z.string().trim().min(1, "Escreva a mensagem.").max(4000) }), req.body ?? {});
+    const sent = await whatsapp.reply(key, body.jid, body.text);
+    storeWhatsAppMessage(ws.db, user.id, { id: sent.id ?? `local-${Date.now()}`, chatJid: body.jid, fromMe: true, text: body.text, timestamp: Date.now() });
+    res.json({ ok: true });
+  });
+
   // One click = one message, sent through the operator's connected WhatsApp.
   // Sessions, pauses and the 1 -> 2 -> 3 rotation apply exactly as with wa.me.
   app.post("/api/leads/:id/whatsapp-send", async (req: Request, res: Response) => {
@@ -93,8 +113,9 @@ export function createApp({ db, previews, staticDir, auth: authOptions, openTena
     const leadId = intParam(req.params.id);
     const campaignId = body.campaign_id ?? null;
     const prepared = prepareWhatsAppSend(ws.db, { leadId, campaignId, userId: user.id });
-    await whatsapp.send(key, prepared.phone, prepared.text);
+    const sent = await whatsapp.send(key, prepared.phone, prepared.text);
     const result = registerWhatsAppSent(ws.db, { leadId, campaignId, userId: user.id, messageType: prepared.messageType });
+    storeWhatsAppMessage(ws.db, user.id, { id: sent.id ?? `local-${Date.now()}`, chatJid: sent.jid, phoneJid: sent.jid, fromMe: true, text: prepared.text, timestamp: Date.now() });
     res.json({ ...result, sent: true, establishment_name: prepared.establishment_name });
   });
 

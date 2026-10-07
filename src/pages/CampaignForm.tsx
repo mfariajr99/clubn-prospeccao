@@ -11,12 +11,35 @@ import { useToast } from "../components/Toast";
 import { CampaignBadge, Field, SkeletonRows } from "../components/ui";
 import { ApiError, api, errorMessage } from "../lib/api";
 import { fmtNumber } from "../lib/format";
+import { CalendarClock, Gauge } from "lucide-react";
+import { DEFAULT_SEND_LIMIT, DEFAULT_SEND_WINDOW_HOURS, MAX_SEND_LIMIT, MAX_SEND_WINDOW_HOURS, describeRule } from "../../shared/campaignRule";
+
+const WINDOW_PRESETS = [
+  { hours: 6, label: "6 horas" },
+  { hours: 12, label: "12 horas" },
+  { hours: 24, label: "1 dia" },
+];
+
+/** ISO -> value for <input type="datetime-local"> (browser time zone). */
+function toLocalInput(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+const fromLocalInput = (v: string) => (v ? new Date(v).toISOString() : null);
 
 const DEFAULT_MESSAGES = [
   "Olá, {{nome_estabelecimento}}! Tudo bem? Sou do Club’n e conheci o trabalho de vocês em {{cidade}}. Temos um programa de parcerias para {{segmento}} que pode trazer novos clientes. Podemos conversar?",
   "Oi, {{nome_estabelecimento}}! Aqui é do Club’n. Estamos selecionando parceiros de {{segmento}} em {{cidade}} e lembramos de vocês. Posso te explicar em 2 minutos?",
   "Bom dia, {{nome_estabelecimento}}! O Club’n conecta estabelecimentos de {{cidade}} a clientes do nosso clube de benefícios. Faz sentido conversarmos sobre uma parceria?",
 ];
+
+function formatDuration(hours: number): string {
+  if (hours < 24) return `${hours} hora${hours === 1 ? "" : "s"}`;
+  const days = Math.round((hours / 24) * 10) / 10;
+  return `${String(days).replace(".", ",")} dia${days === 1 ? "" : "s"}`;
+}
 
 export default function CampaignForm() {
   const { id } = useParams();
@@ -36,11 +59,16 @@ export default function CampaignForm() {
   const [messageTab, setMessageTab] = useState(0);
   const setMessage = (i: number, v: string) => setMessages((m) => m.map((x, j) => (j === i ? v : x)));
   const [status, setStatus] = useState<"draft" | "ready">("draft");
+  const [sendLimit, setSendLimit] = useState(String(DEFAULT_SEND_LIMIT));
+  const [windowHours, setWindowHours] = useState(String(DEFAULT_SEND_WINDOW_HOURS));
+  const [scheduled, setScheduled] = useState(false);
+  const [startAt, setStartAt] = useState("");
+  const [endAt, setEndAt] = useState("");
   const [filter, setFilter] = useState<LeadFilterValues>(() => state.filter ?? (batchId ? { batch_id: batchId } : {}));
   const [selection, setSelection] = useState<PickerSelection>(emptySelection);
   const [pageLeads, setPageLeads] = useState<Lead[]>([]);
   const [previewLeadId, setPreviewLeadId] = useState<number | null>(null);
-  const [errors, setErrors] = useState<{ name?: string; messages?: (string | undefined)[]; leads?: string }>({});
+  const [errors, setErrors] = useState<{ name?: string; messages?: (string | undefined)[]; leads?: string; send_limit?: string; send_window_hours?: string; scheduled_start_at?: string; scheduled_end_at?: string }>({});
   const [saving, setSaving] = useState(false);
   const submitting = useRef(false);
 
@@ -70,6 +98,11 @@ export default function CampaignForm() {
         setDescription(c.description);
         setMessages([c.message_template, c.message_template_2 || c.message_template, c.message_template_3 || c.message_template]);
         setStatus(c.status === "ready" ? "ready" : "draft");
+        setSendLimit(c.send_limit ? String(c.send_limit) : "");
+        setWindowHours(c.send_window_hours ? String(c.send_window_hours) : "");
+        setScheduled(Boolean(c.scheduled_start_at || c.scheduled_end_at));
+        setStartAt(toLocalInput(c.scheduled_start_at));
+        setEndAt(toLocalInput(c.scheduled_end_at));
       })
       .catch((e) => toast.error(errorMessage(e)))
       .finally(() => setLoading(false));
@@ -103,7 +136,17 @@ export default function CampaignForm() {
       next.messages = messageErrors;
       setMessageTab(messageErrors.findIndex(Boolean));
     }
-    if (status === "ready" && totalLeads === 0) next.leads = "Selecione ao menos um lead para deixar a campanha pronta para iniciar.";
+    const limitN = Number(sendLimit);
+    const windowN = Number(windowHours);
+    if (!Number.isInteger(limitN) || limitN < 1 || limitN > MAX_SEND_LIMIT) next.send_limit = `Informe de 1 a ${MAX_SEND_LIMIT} mensagens.`;
+    if (!Number.isInteger(windowN) || windowN < 1 || windowN > MAX_SEND_WINDOW_HOURS) next.send_window_hours = `Informe de 1 a ${MAX_SEND_WINDOW_HOURS} horas.`;
+    if (scheduled) {
+      if (!startAt) next.scheduled_start_at = "Informe a data e a hora de início.";
+      else if (!editing && Date.parse(startAt) < Date.now() - 60_000) next.scheduled_start_at = "Escolha um horário no futuro.";
+      if (endAt && startAt && Date.parse(endAt) <= Date.parse(startAt)) next.scheduled_end_at = "O fim precisa ser depois do início.";
+    }
+    const finalStatus = scheduled ? "ready" : status;
+    if (finalStatus === "ready" && totalLeads === 0) next.leads = scheduled ? "Selecione ao menos um lead para agendar a campanha." : "Selecione ao menos um lead para deixar a campanha pronta para iniciar.";
     setErrors(next);
     if (Object.keys(next).length) {
       toast.error("Verifique os campos destacados.");
@@ -117,7 +160,11 @@ export default function CampaignForm() {
       message_template: messages[0],
       message_template_2: messages[1],
       message_template_3: messages[2],
-      status,
+      status: finalStatus,
+      send_limit: limitN,
+      send_window_hours: windowN,
+      scheduled_start_at: scheduled ? fromLocalInput(startAt) : null,
+      scheduled_end_at: scheduled ? fromLocalInput(endAt) : null,
       lead_ids: selection.mode === "ids" && selection.ids.size ? [...selection.ids] : undefined,
       lead_filter: selection.mode === "filter" ? cleanFilter(selection.filter) : undefined,
     };
@@ -126,6 +173,7 @@ export default function CampaignForm() {
       toast.success(editing ? "Campanha atualizada." : `Campanha criada com ${fmtNumber(saved.lead_count)} lead(s).`);
       navigate(`/campanhas/${saved.id}`);
     } catch (err) {
+      if (err instanceof ApiError && Object.keys(err.fields).length) setErrors((x) => ({ ...x, ...err.fields }));
       toast.error(err instanceof ApiError ? err.message : errorMessage(err));
     } finally {
       submitting.current = false;
@@ -156,7 +204,7 @@ export default function CampaignForm() {
             <Link to="/campanhas">Campanhas</Link> / {editing ? "Editar" : "Criar"}
           </div>
           <h1>{editing ? "Editar campanha" : "Criar campanha"}</h1>
-          <p>Defina as 3 mensagens e selecione os leads. As mensagens serão abertas uma a uma no WhatsApp, sempre por clique do operador.</p>
+          <p>Defina as 3 mensagens, a regra de disparo, o agendamento e os leads. Cada mensagem sai por um clique do operador em “Enviar mensagem”.</p>
         </div>
       </div>
 
@@ -167,7 +215,7 @@ export default function CampaignForm() {
             <input id="campaign-name" className="input" maxLength={120} value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: Parceiros gastronomia — zona sul" />
           </Field>
           <Field label="Status" htmlFor="campaign-status" hint={campaign?.status === "paused" ? "Campanha pausada: o status será mantido." : "“Pronta para iniciar” libera a campanha na tela Iniciar campanhas."}>
-            <select id="campaign-status" className="select" value={status} onChange={(e) => setStatus(e.target.value as "draft" | "ready")} disabled={campaign?.status === "paused"}>
+            <select id="campaign-status" className="select" value={status} onChange={(e) => setStatus(e.target.value as "draft" | "ready")} disabled={campaign?.status === "paused" || scheduled}>
               <option value="draft">Rascunho</option>
               <option value="ready">Pronta para iniciar</option>
             </select>
@@ -202,6 +250,68 @@ export default function CampaignForm() {
           previewLeadId={previewLeadId}
           onPreviewLeadChange={setPreviewLeadId}
         />
+      </section>
+
+      <section className="card" aria-labelledby="rule-title">
+        <h2 id="rule-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Gauge size={19} aria-hidden /> Regra de disparo
+        </h2>
+        <p className="card-sub">Limite de mensagens desta campanha em um período. Ao atingir o limite, o botão “Enviar mensagem” fica bloqueado até liberar o próximo envio.</p>
+        <div className="rule-row">
+          <Field label="Até quantas mensagens" required htmlFor="send-limit" error={errors.send_limit}>
+            <input id="send-limit" className="input" type="number" inputMode="numeric" min={1} max={MAX_SEND_LIMIT} value={sendLimit} onChange={(e) => setSendLimit(e.target.value)} />
+          </Field>
+          <Field label="A cada (horas)" required htmlFor="send-window" error={errors.send_window_hours}>
+            <input id="send-window" className="input" type="number" inputMode="numeric" min={1} max={MAX_SEND_WINDOW_HOURS} value={windowHours} onChange={(e) => setWindowHours(e.target.value)} />
+          </Field>
+          <div className="rule-presets" role="group" aria-label="Períodos sugeridos">
+            {WINDOW_PRESETS.map((p) => (
+              <button key={p.hours} type="button" className="chip" aria-pressed={Number(windowHours) === p.hours} onClick={() => setWindowHours(String(p.hours))}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="notice" role="note" style={{ marginTop: 12 }} data-testid="rule-summary">
+          <Gauge size={16} />
+          <span>
+            <strong>{describeRule(Number(sendLimit) || null, Number(windowHours) || null)}.</strong>
+            {Number(sendLimit) > 0 && Number(windowHours) > 0 && totalLeads > 0 && (
+              <>
+                {" "}
+                {fmtNumber(totalLeads)} lead(s): cerca de {formatDuration(Math.ceil(totalLeads / Number(sendLimit)) * Number(windowHours))} para contatar todos.
+              </>
+            )}{" "}
+            As sessões do operador (até 90 por dia) continuam valendo.
+          </span>
+        </div>
+      </section>
+
+      <section className="card" aria-labelledby="schedule-title">
+        <h2 id="schedule-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <CalendarClock size={19} aria-hidden /> Agendamento
+        </h2>
+        <label className="check-row" style={{ marginTop: 6 }}>
+          <input type="checkbox" checked={scheduled} onChange={(e) => setScheduled(e.target.checked)} /> Agendar o início desta campanha
+        </label>
+        {scheduled ? (
+          <>
+            <div className="form-grid" style={{ marginTop: 12 }}>
+              <Field label="Início" required htmlFor="schedule-start" error={errors.scheduled_start_at} hint="A campanha entra em andamento sozinha neste horário.">
+                <input id="schedule-start" className="input" type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} />
+              </Field>
+              <Field label="Fim (opcional)" htmlFor="schedule-end" error={errors.scheduled_end_at} hint="Depois deste horário a campanha é concluída.">
+                <input id="schedule-end" className="input" type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
+              </Field>
+            </div>
+            <p className="small muted" style={{ margin: "8px 0 0" }}>
+              Agendar salva a campanha como “Pronta para iniciar”. No horário de início ela aparece em andamento na Visão geral e em Iniciar campanhas — os envios continuam sendo feitos
+              por clique do operador.
+            </p>
+          </>
+        ) : (
+          <p className="small muted" style={{ margin: "8px 0 0" }}>Sem agendamento, a campanha começa quando você clicar em “Iniciar”.</p>
+        )}
       </section>
 
       <section className="card">

@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { CAMPAIGN_STATUSES, CAMPAIGN_STATUS_LABELS, EDITABLE_CAMPAIGN_STATUSES } from "../../shared/constants";
 import type { Campaign, Paginated } from "../../shared/types";
-import { CampaignProgress, useCampaignActions } from "../components/campaignActions";
-import { CampaignBadge, ConfirmDialog, EmptyState, Pagination, SkeletonRows } from "../components/ui";
+import { CampaignProgress, CampaignStatusBadge, RuleUsage, useCampaignActions } from "../components/campaignActions";
+import { ConfirmDialog, EmptyState, Pagination, SkeletonRows } from "../components/ui";
 import { useAsync } from "../hooks/useAsync";
 import { api } from "../lib/api";
 import { fmtDate, fmtDateTime, fmtNumber } from "../lib/format";
@@ -47,7 +47,7 @@ export default function CampaignsList() {
     if (c.status === "draft" || c.status === "ready")
       return (
         <button className="btn xs" onClick={() => actions.setStatus(c, "in_progress", true)} disabled={actions.busy === c.id || !c.lead_count} title={!c.lead_count ? "Adicione leads para iniciar" : undefined}>
-          <Play size={13} /> Iniciar
+          <Play size={13} /> {c.rule?.phase === "scheduled" ? "Iniciar agora" : "Iniciar"}
         </button>
       );
     if (c.status === "paused")
@@ -146,7 +146,10 @@ export default function CampaignsList() {
                       </td>
                       <td className="mono nowrap">{fmtNumber(c.lead_count)}</td>
                       <td>
-                        <CampaignBadge status={c.status} />
+                        <CampaignStatusBadge campaign={c} />
+                        <div style={{ marginTop: 6 }}>
+                          <RuleUsage campaign={c} compact />
+                        </div>
                       </td>
                       <td>
                         <CampaignProgress campaign={c} />
@@ -167,8 +170,9 @@ export default function CampaignsList() {
                     <Link to={`/campanhas/${c.id}`} className="cell-title">
                       {c.name}
                     </Link>
-                    <CampaignBadge status={c.status} />
+                    <CampaignStatusBadge campaign={c} />
                   </div>
+                  <RuleUsage campaign={c} compact />
                   <div className="lc-meta">
                     <span>{fmtNumber(c.lead_count)} leads</span>
                     <span>Criada em {fmtDate(c.created_at)} por {c.created_by_name ?? "—"}</span>

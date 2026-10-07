@@ -5,6 +5,42 @@ import type { Campaign } from "../../shared/types";
 import { api, errorMessage } from "../lib/api";
 import { fmtNumber, pct } from "../lib/format";
 import { useToast } from "./Toast";
+import { CalendarClock, Gauge } from "lucide-react";
+import { describeRule, fmtBrDateTime } from "../../shared/campaignRule";
+import { CampaignBadge } from "./ui";
+
+/** Status badge that also shows "Agendada · 08/10 às 09:00". */
+export function CampaignStatusBadge({ campaign }: { campaign: Pick<Campaign, "status" | "rule"> }) {
+  if (campaign.status === "ready" && campaign.rule?.phase === "scheduled" && campaign.rule.scheduled_start_at) {
+    return (
+      <span className="badge purple" title="Campanha agendada">
+        <CalendarClock size={13} aria-hidden /> Agendada · {fmtBrDateTime(campaign.rule.scheduled_start_at)}
+      </span>
+    );
+  }
+  return <CampaignBadge status={campaign.status} />;
+}
+
+/** "12/30 nas últimas 6h" with a mini bar; red when the rule is full. */
+export function RuleUsage({ campaign, compact }: { campaign: Pick<Campaign, "rule" | "send_limit" | "send_window_hours">; compact?: boolean }) {
+  const rule = campaign.rule;
+  if (!rule?.limit || !rule.window_hours) {
+    return compact ? null : <span className="cell-sub">{describeRule(null, null)}</span>;
+  }
+  const full = Boolean(rule.next_slot_at);
+  return (
+    <div className={`rule-usage ${full ? "full" : ""}`} title={describeRule(rule.limit, rule.window_hours)} data-testid="rule-usage">
+      <Gauge size={14} aria-hidden />
+      <span>
+        <strong className="mono">
+          {rule.used}/{rule.limit}
+        </strong>{" "}
+        {compact ? `em ${rule.window_hours}h` : `nas últimas ${rule.window_hours}h`}
+        {full && rule.next_slot_at && !compact ? ` · libera ${fmtBrDateTime(rule.next_slot_at)}` : ""}
+      </span>
+    </div>
+  );
+}
 
 export function CampaignProgress({ campaign }: { campaign: Campaign }) {
   const total = campaign.lead_count ?? 0;

@@ -1,10 +1,10 @@
-import { ChevronDown, LayoutGrid, LogOut, Megaphone, Menu, PanelLeftClose, PanelLeftOpen, Smartphone, UserCog, Users, X } from "lucide-react";
+import { ChevronDown, LayoutGrid, LogOut, Megaphone, Menu, MessageSquare, PanelLeftClose, PanelLeftOpen, Smartphone, UserCog, Users, X } from "lucide-react";
 import { logout, useAuth } from "./AuthGate";
 import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { initials } from "../lib/format";
 import { QuotaBadge } from "./Quota";
-import { WhatsAppPill } from "./WhatsAppStatus";
+import { WhatsAppPill, useWhatsApp } from "./WhatsAppStatus";
 import { useSession } from "./Session";
 import { useToast } from "./Toast";
 import { Field, Modal } from "./ui";
@@ -56,6 +56,7 @@ function readCollapsed(): boolean {
 function Navigation({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
   const { pathname } = useLocation();
   const { role } = useAuth();
+  const { unread } = useWhatsApp();
   const [open, setOpen] = useState<Record<string, boolean>>({ campanhas: true, leads: true });
   return (
     <nav className="nav" aria-label="Menu principal">
@@ -92,6 +93,15 @@ function Navigation({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?
           </div>
         );
       })}
+      <NavLink to="/mensagens" className="nav-link" onClick={onNavigate} title={collapsed ? "Mensagens" : undefined}>
+        <MessageSquare size={19} aria-hidden />
+        <span className="nav-label">Mensagens</span>
+        {unread > 0 && (
+          <span className="nav-count" aria-label={`${unread} não lidas`}>
+            {unread > 99 ? "99+" : unread}
+          </span>
+        )}
+      </NavLink>
       <NavLink to="/whatsapp" className="nav-link" onClick={onNavigate} title={collapsed ? "Conexão WhatsApp" : undefined}>
         <Smartphone size={19} aria-hidden />
         <span className="nav-label">Conexão WhatsApp</span>

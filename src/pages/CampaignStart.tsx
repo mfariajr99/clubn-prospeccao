@@ -2,8 +2,8 @@ import { Megaphone, Play } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { Campaign, Paginated } from "../../shared/types";
 import { CampaignLeadsBoard } from "../components/CampaignLeadsBoard";
-import { CampaignProgress, useCampaignActions } from "../components/campaignActions";
-import { CampaignBadge, EmptyState, SkeletonRows } from "../components/ui";
+import { CampaignProgress, CampaignStatusBadge, RuleUsage, useCampaignActions } from "../components/campaignActions";
+import { EmptyState, SkeletonRows } from "../components/ui";
 import { useAsync } from "../hooks/useAsync";
 import { api } from "../lib/api";
 import { fmtNumber } from "../lib/format";
@@ -79,7 +79,7 @@ export default function CampaignStart() {
                   </span>
                   <span className="cell-title">{c.name}</span>
                 </div>
-                <CampaignBadge status={c.status} />
+                <CampaignStatusBadge campaign={c} />
                 <CampaignProgress campaign={c} />
               </Link>
             ))}
@@ -100,16 +100,19 @@ export default function CampaignStart() {
           <div className="card-head">
             <div>
               <h2 style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                {campaign.name} <CampaignBadge status={campaign.status} />
+                {campaign.name} <CampaignStatusBadge campaign={campaign} />
               </h2>
               <div style={{ maxWidth: 320, marginTop: 8 }}>
                 <CampaignProgress campaign={campaign} />
+                <div style={{ marginTop: 8 }}>
+                  <RuleUsage campaign={campaign} />
+                </div>
               </div>
             </div>
             <div className="btn-row">
               {(campaign.status === "ready" || campaign.status === "draft") && (
                 <button className="btn" onClick={() => actions.setStatus(campaign, "in_progress")} disabled={actions.busy === campaign.id}>
-                  <Play size={16} /> Iniciar campanha
+                  <Play size={16} /> {campaign.rule?.phase === "scheduled" ? "Iniciar agora" : "Iniciar campanha"}
                 </button>
               )}
               {campaign.status === "paused" && (

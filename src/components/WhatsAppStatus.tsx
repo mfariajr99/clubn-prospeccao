@@ -8,11 +8,14 @@ import { useSession } from "./Session";
 interface WhatsAppValue {
   status: WhatsAppStatus | null;
   connected: boolean;
+  /** Unread messages in "Mensagens" for the selected operator. */
+  unread: number;
+  refreshUnread: () => void;
   refresh: () => void;
   apply: (s: WhatsAppStatus) => void;
 }
 
-const WhatsAppContext = createContext<WhatsAppValue>({ status: null, connected: false, refresh: () => undefined, apply: () => undefined });
+const WhatsAppContext = createContext<WhatsAppValue>({ status: null, connected: false, unread: 0, refreshUnread: () => undefined, refresh: () => undefined, apply: () => undefined });
 
 /** Connection of the SELECTED operator (each operator links their own number). */
 export function WhatsAppProvider({ children }: { children: ReactNode }) {
@@ -38,7 +41,27 @@ export function WhatsAppProvider({ children }: { children: ReactNode }) {
     return () => window.clearInterval(t);
   }, [refresh, waiting]);
 
-  const value = useMemo<WhatsAppValue>(() => ({ status, connected: status?.state === "connected", refresh, apply: setStatus }), [status, refresh]);
+  const [unread, setUnread] = useState(0);
+  const refreshUnread = useCallback(() => {
+    if (!user) return;
+    api
+      .get<{ unread: number }>("/inbox/unread")
+      .then((r) => setUnread(r.unread))
+      .catch(() => undefined);
+  }, [user]);
+  const connected = status?.state === "connected";
+  useEffect(() => {
+    setUnread(0);
+    refreshUnread();
+    if (!connected) return;
+    const t = window.setInterval(refreshUnread, 15_000);
+    return () => window.clearInterval(t);
+  }, [refreshUnread, connected]);
+
+  const value = useMemo<WhatsAppValue>(
+    () => ({ status, connected, unread, refreshUnread, refresh, apply: setStatus }),
+    [status, connected, unread, refreshUnread, refresh],
+  );
   return <WhatsAppContext.Provider value={value}>{children}</WhatsAppContext.Provider>;
 }
 

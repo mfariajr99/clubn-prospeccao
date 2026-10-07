@@ -5,6 +5,7 @@ import { WhatsAppButton } from "../../src/components/WhatsAppButton";
 import { whatsappLinkFor } from "../../src/lib/whatsapp";
 import { MemoryRouter } from "react-router-dom";
 import { ToastProvider } from "../../src/components/Toast";
+import { WhatsAppContextForTests } from "../../src/components/WhatsAppStatus";
 import { mockFetch, renderWithProviders, sampleLead } from "./utils";
 
 const TEMPLATE = "Olá, {{nome_estabelecimento}}! Vi vocês em {{bairro}}, {{cidade}}/{{estado}} ({{segmento}}).";
@@ -105,5 +106,37 @@ describe("contador de envios no botão", () => {
     );
     expect(screen.queryByRole("link", { name: /Enviar mensagem/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Enviar mensagem/ })).toHaveAttribute("title", "Pausa de envios: libera em 01:30:00");
+  });
+});
+
+describe("botão Enviar mensagem com o WhatsApp do operador conectado", () => {
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("envia direto (1 clique = 1 mensagem) e confirma o envio", async () => {
+    const calls = mockFetch({
+      "POST /api/leads/7/whatsapp-send": () => ({ previous: "not_contacted", current: "message_sent", opened_at: "x", message_type: 1, sent: true }),
+    });
+    const onOpened = vi.fn();
+    const connected = {
+      status: { state: "connected" as const, qr: null, pairing_code: null, phone: "5511988887777", name: "Thomaz", error: null, updated_at: "x" },
+      connected: true,
+      unread: 0,
+      refreshUnread: () => undefined,
+      refresh: () => undefined,
+      apply: () => undefined,
+    };
+    renderWithProviders(
+      <WhatsAppContextForTests value={connected}>
+        <WhatsAppButton lead={sampleLead} templates={[TEMPLATE]} campaignId={3} onOpened={onOpened} />
+      </WhatsAppContextForTests>,
+    );
+    expect(screen.queryByRole("link", { name: /Enviar mensagem/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Enviar mensagem/ }));
+    await waitFor(() => expect(onOpened).toHaveBeenCalledWith(expect.objectContaining({ current: "message_sent" })));
+    expect(calls).toEqual([{ url: "/api/leads/7/whatsapp-send", method: "POST", body: { campaign_id: 3 } }]);
+    expect(await screen.findByText(/Mensagem 1 enviada para Café & Cia Fictício/)).toBeInTheDocument();
   });
 });

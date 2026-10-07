@@ -10,6 +10,8 @@ import { HttpError } from "../../server/lib/http";
 import QRCode from "qrcode";
 import { createApiRouter, resolveOperator, type ApiResult } from "../../server/router";
 import { prepareWhatsAppSend, registerWhatsAppSent } from "../../server/services/leads";
+import { storeWhatsAppMessage } from "../../server/services/inbox";
+import { syncScheduledCampaigns } from "../../server/services/campaignRules";
 import type { AuthStatus, WhatsAppStatus } from "../../shared/types";
 import { adaptSqlJs } from "./sqljsAdapter";
 import { createDemoPreviews } from "./demoPreviews";
@@ -167,10 +169,11 @@ export async function startDemoServer(): Promise<void> {
   const waBlank = (): WhatsAppStatus => ({ state: "disconnected", qr: null, pairing_code: null, phone: null, name: null, error: null, updated_at: new Date().toISOString(), simulated: true });
 
   function whatsappRoute(method: string, path: string, body: Record<string, unknown>, userId: string | null): ApiResult | null {
-    if (!identity || (!path.startsWith("/whatsapp/") && !/^\/leads\/\d+\/whatsapp-send$/.test(path))) return null;
+    if (!identity || (!path.startsWith("/whatsapp/") && path !== "/inbox/reply" && !/^\/leads\/\d+\/whatsapp-send$/.test(path))) return null;
     const ws = identity.role === "client" ? accounts.tenant(identity.accountId) : { db, key: "main" };
     const user = resolveOperator(ws.db, userId);
     const key = `${ws.key}/${user.id}`;
+    syncScheduledCampaigns(ws.db);
     const current = waSessions.get(key) ?? waBlank();
     const save = (patch: Partial<WhatsAppStatus>) => {
       const next = { ...current, ...patch, updated_at: new Date().toISOString() };
@@ -187,6 +190,17 @@ export async function startDemoServer(): Promise<void> {
       return save({ state: "qr", qr: demoQr, pairing_code: null, error: null });
     }
     if (path === "/whatsapp/simulate-link" && method === "POST") {
+      // Sample conversations so "Mensagens" can be tried out (fictitious contacts).
+      const lead = ws.db.prepare("SELECT id, whatsapp, establishment_name FROM leads WHERE whatsapp_valid = 1 ORDER BY id LIMIT 1").get() as
+        | { id: number; whatsapp: string; establishment_name: string }
+        | undefined;
+      const t0 = Date.now() - 50 * 60_000;
+      if (lead) {
+        const jid = `${lead.whatsapp}@s.whatsapp.net`;
+        storeWhatsAppMessage(ws.db, user.id, { id: `demo-${user.id}-1`, chatJid: jid, fromMe: true, text: `Olá, ${lead.establishment_name}! Tudo bem? Sou do Club’n.`, timestamp: t0 });
+        storeWhatsAppMessage(ws.db, user.id, { id: `demo-${user.id}-2`, chatJid: jid, fromMe: false, pushName: "Responsável", text: "Oi! Tudo ótimo. Pode me explicar como funciona a parceria?", timestamp: t0 + 20 * 60_000 });
+      }
+      storeWhatsAppMessage(ws.db, user.id, { id: `demo-${user.id}-3`, chatJid: "5511900009999@s.whatsapp.net", fromMe: false, pushName: "Contato fictício", text: "Bom dia! Vi o anúncio de vocês.", timestamp: t0 + 40 * 60_000 });
       return save({ state: "connected", qr: null, pairing_code: null, phone: "5511900000000", name: user.name, error: null });
     }
     if (path === "/whatsapp/disconnect" && method === "POST") {
@@ -208,7 +222,16 @@ export async function startDemoServer(): Promise<void> {
         messageType: prepared.messageType,
         note: `Mensagem ${prepared.messageType} enviada (simulação da demonstração: nada foi enviado de verdade)`,
       });
+      storeWhatsAppMessage(ws.db, user.id, { id: `demo-out-${Date.now()}`, chatJid: `${prepared.phone}@s.whatsapp.net`, fromMe: true, text: prepared.text, timestamp: Date.now() });
       return { status: 200, body: { ...result, sent: true, simulated: true, establishment_name: prepared.establishment_name } };
+    }
+    if (path === "/inbox/reply" && method === "POST") {
+      if (current.state !== "connected") throw new HttpError(409, "Seu WhatsApp não está conectado. Conecte em “Conexão WhatsApp” para responder.", { code: "WA_NOT_CONNECTED" });
+      const text = String(body.text ?? "").trim();
+      const jid = String(body.jid ?? "");
+      if (!text || !jid) throw new HttpError(400, "Escreva a mensagem.");
+      storeWhatsAppMessage(ws.db, user.id, { id: `demo-out-${Date.now()}`, chatJid: jid, fromMe: true, text, timestamp: Date.now() });
+      return { status: 200, body: { ok: true, simulated: true } };
     }
     return null;
   }

@@ -4,6 +4,8 @@ import { findUnknownVariables } from "../../shared/template.js";
 import type { Campaign, CampaignLead, Paginated } from "../../shared/types.js";
 import { nowIso, type DB } from "../db/core.js";
 import { HttpError, notFound } from "../lib/http.js";
+import { MAX_SEND_LIMIT, MAX_SEND_WINDOW_HOURS } from "../../shared/campaignRule.js";
+import { campaignRule } from "./campaignRules.js";
 import { attachLinks, buildLeadWhere, listLeadIds, type LeadFilter } from "./leads.js";
 
 const CONTACTED_SQL = CONTACTED_STATUSES.map((s) => `'${s}'`).join(",");
@@ -25,6 +27,36 @@ export interface CampaignInput {
   message_template_2: string;
   message_template_3: string;
   status: CampaignStatus;
+  /** Dispatch rule: at most send_limit messages in any send_window_hours (both or neither). */
+  send_limit?: number | null;
+  send_window_hours?: number | null;
+  /** Schedule (ISO): sending opens at start and closes at end. */
+  scheduled_start_at?: string | null;
+  scheduled_end_at?: string | null;
+}
+
+function normalizeRuleInput(input: CampaignInput) {
+  const fields: Record<string, string> = {};
+  const limit = input.send_limit ?? null;
+  const windowHours = input.send_window_hours ?? null;
+  if ((limit === null) !== (windowHours === null)) fields.send_limit = "Informe a quantidade de mensagens e o período.";
+  if (limit !== null && (!Number.isInteger(limit) || limit < 1 || limit > MAX_SEND_LIMIT)) fields.send_limit = `Use de 1 a ${MAX_SEND_LIMIT} mensagens.`;
+  if (windowHours !== null && (!Number.isInteger(windowHours) || windowHours < 1 || windowHours > MAX_SEND_WINDOW_HOURS))
+    fields.send_window_hours = `Use de 1 a ${MAX_SEND_WINDOW_HOURS} horas.`;
+  const parse = (v: string | null | undefined, key: string) => {
+    if (!v) return null;
+    const t = Date.parse(v);
+    if (Number.isNaN(t)) {
+      fields[key] = "Data inválida.";
+      return null;
+    }
+    return new Date(t).toISOString();
+  };
+  const start = parse(input.scheduled_start_at, "scheduled_start_at");
+  const end = parse(input.scheduled_end_at, "scheduled_end_at");
+  if (start && end && Date.parse(end) <= Date.parse(start)) fields.scheduled_end_at = "O fim precisa ser depois do início.";
+  if (Object.keys(fields).length) throw new HttpError(422, "Verifique a regra de disparo e o agendamento.", { fields });
+  return { limit, windowHours, start, end };
 }
 
 export function validateCampaignInput(input: CampaignInput): void {
@@ -63,25 +95,44 @@ export function listCampaigns(
   const sort = sorts[options.sort ?? "updated_at"] ?? sorts.updated_at;
   const dir = options.dir === "asc" ? "ASC" : "DESC";
   const total = (db.prepare(`SELECT COUNT(*) AS c FROM campaigns c ${where}`).get(...params) as { c: number }).c;
-  const items = db.prepare(`${CAMPAIGN_SELECT} ${where} ORDER BY ${sort} ${dir}, c.id DESC LIMIT ? OFFSET ?`).all(...params, pageSize, (page - 1) * pageSize) as Campaign[];
+  const now = new Date();
+  const items = (db.prepare(`${CAMPAIGN_SELECT} ${where} ORDER BY ${sort} ${dir}, c.id DESC LIMIT ? OFFSET ?`).all(...params, pageSize, (page - 1) * pageSize) as Campaign[]).map(
+    (c) => ({ ...c, rule: campaignRule(db, c, now) }),
+  );
   return { items, total, page, pageSize };
 }
 
 export function getCampaign(db: DB, id: number): Campaign {
   const campaign = db.prepare(`${CAMPAIGN_SELECT} WHERE c.id = ?`).get(id) as Campaign | undefined;
   if (!campaign) throw notFound("Campanha");
-  return campaign;
+  return { ...campaign, rule: campaignRule(db, campaign) };
 }
 
 export function createCampaign(db: DB, input: CampaignInput, userId: number, leads?: { leadIds?: number[]; filter?: LeadFilter }): Campaign {
   validateCampaignInput(input);
+  const rule = normalizeRuleInput(input);
   return db.transaction(() => {
     const now = nowIso();
     const info = db
       .prepare(
-        "INSERT INTO campaigns (name, description, message_template, message_template_2, message_template_3, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        `INSERT INTO campaigns (name, description, message_template, message_template_2, message_template_3, status, created_by, created_at, updated_at,
+          send_limit, send_window_hours, scheduled_start_at, scheduled_end_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(input.name, input.description, input.message_template, input.message_template_2, input.message_template_3, input.status, userId, now, now);
+      .run(
+        input.name,
+        input.description,
+        input.message_template,
+        input.message_template_2,
+        input.message_template_3,
+        input.status,
+        userId,
+        now,
+        now,
+        rule.limit,
+        rule.windowHours,
+        rule.start,
+        rule.end,
+      );
     const id = Number(info.lastInsertRowid);
     if (leads) addLeadsToCampaign(db, id, leads);
     if (input.status === "ready" && countLeads(db, id) === 0) {
@@ -97,12 +148,14 @@ export function updateCampaign(db: DB, id: number, input: CampaignInput): Campai
     throw new HttpError(409, "Campanhas em andamento ou concluídas não podem ser editadas. Pause a campanha para editar.");
   }
   validateCampaignInput({ ...input, status: current.status === "paused" ? "draft" : input.status });
+  const rule = normalizeRuleInput(input);
   const status = current.status === "paused" ? "paused" : input.status;
   if (status === "ready" && countLeads(db, id) === 0) {
     throw new HttpError(400, "Selecione ao menos um lead para deixar a campanha pronta para iniciar.");
   }
   db.prepare(
-    "UPDATE campaigns SET name = ?, description = ?, message_template = ?, message_template_2 = ?, message_template_3 = ?, status = ?, updated_at = ? WHERE id = ?",
+    `UPDATE campaigns SET name = ?, description = ?, message_template = ?, message_template_2 = ?, message_template_3 = ?, status = ?, updated_at = ?,
+      send_limit = ?, send_window_hours = ?, scheduled_start_at = ?, scheduled_end_at = ? WHERE id = ?`,
   ).run(
     input.name,
     input.description,
@@ -111,6 +164,10 @@ export function updateCampaign(db: DB, id: number, input: CampaignInput): Campai
     input.message_template_3,
     status,
     nowIso(),
+    rule.limit,
+    rule.windowHours,
+    rule.start,
+    rule.end,
     id,
   );
   return getCampaign(db, id);
@@ -156,9 +213,21 @@ export function duplicateCampaign(db: DB, id: number, userId: number): Campaign 
     const now = nowIso();
     const info = db
       .prepare(
-        "INSERT INTO campaigns (name, description, message_template, message_template_2, message_template_3, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?)",
+        `INSERT INTO campaigns (name, description, message_template, message_template_2, message_template_3, status, created_by, created_at, updated_at,
+          send_limit, send_window_hours) VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?)`,
       )
-      .run(`${source.name} (cópia)`, source.description, source.message_template, source.message_template_2 ?? "", source.message_template_3 ?? "", userId, now, now);
+      .run(
+        `${source.name} (cópia)`,
+        source.description,
+        source.message_template,
+        source.message_template_2 ?? "",
+        source.message_template_3 ?? "",
+        userId,
+        now,
+        now,
+        source.send_limit ?? null,
+        source.send_window_hours ?? null,
+      );
     const newId = Number(info.lastInsertRowid);
     // Leads are copied with a fresh contact status: inclusion is not contact.
     db.prepare(

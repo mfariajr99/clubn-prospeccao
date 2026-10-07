@@ -184,9 +184,19 @@ export function createAccounts(mainDb: DB, options: AccountsOptions) {
     if (password.length > 200) throw new HttpError(422, "Senha muito longa.", { fields: { password: "Senha muito longa." } });
   }
 
+  /** Workspace by its key ("cliente-<id>-<storage>"), used by background WhatsApp events. */
+  function tenantByKey(key: string): Tenant | null {
+    const m = /^cliente-(\d+)-([0-9a-f]+)$/.exec(key);
+    if (!m) return null;
+    const r = row(Number(m[1]));
+    if (!r || r.storage_key !== m[2]) return null;
+    return tenant(r.id);
+  }
+
   return {
     adminLogin,
     tenant,
+    tenantByKey,
 
     isAdminLogin(login: string | undefined | null) {
       return !login || !login.trim() || normalizeLogin(login) === adminLogin;

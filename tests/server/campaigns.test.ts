@@ -101,7 +101,8 @@ describe("sem fila de mensagens", () => {
   it("não existe tabela, rota ou worker de envio de mensagens", async () => {
     const { agent, db } = setup();
     const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((t) => t.name);
-    expect(tables.filter((t) => /queue|outbox|message|dispatch|schedul|job/i.test(t))).toEqual([]);
+    // whatsapp_messages is the "Mensagens" inbox (history of conversations), not a send queue
+    expect(tables.filter((t) => t !== "whatsapp_messages" && /queue|outbox|message|dispatch|schedul|job/i.test(t))).toEqual([]);
     for (const path of ["/api/messages", "/api/messages/send", "/api/queue", "/api/campaigns/1/send", "/api/campaigns/1/dispatch"]) {
       expect((await agent.post(path).send({})).status).toBe(404);
     }

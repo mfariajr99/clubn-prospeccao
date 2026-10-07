@@ -8,6 +8,7 @@ import type {
   QualityLevel,
   RegistrationStatus,
 } from "./constants.js";
+import type { CampaignRuleView } from "./campaignRule.js";
 
 export interface User {
   id: number;
@@ -73,6 +74,13 @@ export interface Campaign {
   interested_count?: number;
   partnership_count?: number;
   last_activity_at?: string | null;
+  send_limit?: number | null;
+  send_window_hours?: number | null;
+  scheduled_start_at?: string | null;
+  scheduled_end_at?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  rule?: CampaignRuleView;
 }
 
 export interface CampaignLead extends Lead {
@@ -206,6 +214,39 @@ export interface DashboardMetrics {
   previews_problem: number;
   conversion_by_potential: { level: PotentialLevel | "none"; total: number; interested: number; partnerships: number }[];
   conversion_by_campaign: { id: number; name: string; status: CampaignStatus; total: number; contacted: number; interested: number; partnerships: number }[];
+  tracking: CampaignTrackingSummary;
+}
+
+/** Main dashboard: active/scheduled campaigns, this week's plan and replies vs the 20% goal. */
+export interface CampaignTrackingSummary {
+  week_start: string;
+  week_end: string;
+  reply_goal: number; // 0.2 = 20%
+  active_campaigns: number;
+  scheduled_campaigns: number;
+  /** Messages planned for this week (already sent this week + still to send). */
+  planned_this_week: number;
+  sent_this_week: number;
+  sent_total: number;
+  replied_total: number;
+  campaigns: CampaignTracking[];
+}
+
+export interface CampaignTracking {
+  id: number;
+  name: string;
+  status: CampaignStatus;
+  scheduled_start_at: string | null;
+  scheduled_end_at: string | null;
+  started_at: string | null;
+  rule: CampaignRuleView;
+  total: number;
+  pending: number;
+  sent: number;
+  replied: number;
+  interested: number;
+  sent_this_week: number;
+  planned_this_week: number;
 }
 
 // ---------------- Access (master admin + independent client logins) ----------------
@@ -279,4 +320,24 @@ export interface WhatsAppStatus {
   updated_at: string;
   /** Demo build: connection is simulated, nothing is sent. */
   simulated?: boolean;
+}
+
+// ---------------- "Mensagens" (WhatsApp inbox of the selected operator) ----------------
+export interface InboxConversation {
+  chat_jid: string;
+  phone: string | null;
+  lead_id: number | null;
+  lead_name: string | null;
+  contact_name: string | null;
+  last_body: string;
+  last_from_me: boolean;
+  last_at: string;
+  unread: number;
+}
+
+export interface InboxMessage {
+  id: number;
+  from_me: boolean;
+  body: string;
+  sent_at: string;
 }

@@ -250,4 +250,36 @@ CREATE INDEX contact_history_lead ON contact_history(lead_id, changed_at);
 CREATE INDEX contact_history_campaign ON contact_history(campaign_id);
 `,
   },
+  {
+    id: 5,
+    name: "campaign_rules_schedule_and_inbox",
+    sql: `
+-- Dispatch rule per campaign: at most send_limit messages in any send_window_hours.
+ALTER TABLE campaigns ADD COLUMN send_limit INTEGER;
+ALTER TABLE campaigns ADD COLUMN send_window_hours INTEGER;
+-- Schedule: the campaign opens for sending at scheduled_start_at and closes at scheduled_end_at.
+ALTER TABLE campaigns ADD COLUMN scheduled_start_at TEXT;
+ALTER TABLE campaigns ADD COLUMN scheduled_end_at TEXT;
+CREATE INDEX contact_history_campaign_time ON contact_history(campaign_id, changed_at);
+
+-- "Mensagens": WhatsApp conversations of each operator's connected number.
+CREATE TABLE whatsapp_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  wa_id TEXT NOT NULL,
+  chat_jid TEXT NOT NULL,
+  phone TEXT,
+  contact_name TEXT,
+  from_me INTEGER NOT NULL DEFAULT 0 CHECK (from_me IN (0,1)),
+  body TEXT NOT NULL,
+  sent_at TEXT NOT NULL,
+  read INTEGER NOT NULL DEFAULT 0 CHECK (read IN (0,1)),
+  lead_id INTEGER REFERENCES leads(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT ${NOW},
+  UNIQUE (user_id, wa_id)
+);
+CREATE INDEX whatsapp_messages_chat ON whatsapp_messages(user_id, chat_jid, sent_at);
+CREATE INDEX whatsapp_messages_unread ON whatsapp_messages(user_id, read, from_me);
+`,
+  },
 ];

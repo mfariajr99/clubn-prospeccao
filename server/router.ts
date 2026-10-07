@@ -26,8 +26,10 @@ import {
   updateCampaign,
 } from "./services/campaigns.js";
 import { dashboardMetrics } from "./services/dashboard.js";
+import { syncScheduledCampaigns } from "./services/campaignRules.js";
 import { listEvaluations, saveEvaluation } from "./services/evaluations.js";
 import { getQuota } from "./services/quota.js";
+import { conversationMessages, listConversations, unreadCount } from "./services/inbox.js";
 import { analyzeImport, batchReport, commitImport, getBatch, listBatches, reportToCsv } from "./services/imports.js";
 import {
   changeContactStatus,
@@ -130,6 +132,10 @@ const campaignBodySchema = z.object({
   message_template_2: z.string().trim().min(5, "Escreva a mensagem 2.").max(3000),
   message_template_3: z.string().trim().min(5, "Escreva a mensagem 3.").max(3000),
   status: z.enum(["draft", "ready"]).default("draft"),
+  send_limit: z.number().int().nullable().optional(),
+  send_window_hours: z.number().int().nullable().optional(),
+  scheduled_start_at: z.string().max(40).nullable().optional(),
+  scheduled_end_at: z.string().max(40).nullable().optional(),
   lead_ids: z.array(z.number().int().positive()).max(20000).optional(),
   lead_filter: leadFilterSchema.optional(),
 });
@@ -206,6 +212,15 @@ export function createApiRouter(db: DB, previews: PreviewProvider, options: ApiR
     } catch {
       throw new HttpError(409, "Já existe um usuário com este e-mail.");
     }
+  });
+
+  // ---------------- Mensagens (WhatsApp inbox of the selected operator) ----------------
+  route("GET", "/inbox", (req) => ok(200, { conversations: listConversations(db, req.user.id, str(req.query.q)), unread: unreadCount(db, req.user.id) }));
+  route("GET", "/inbox/unread", (req) => ok(200, { unread: unreadCount(db, req.user.id) }));
+  route("GET", "/inbox/messages", (req) => {
+    const jid = str(req.query.jid);
+    if (!jid) throw new HttpError(400, "Conversa não informada.");
+    return ok(200, conversationMessages(db, req.user.id, jid));
   });
 
   // ---------------- Dashboard ----------------
@@ -371,6 +386,10 @@ export function createApiRouter(db: DB, previews: PreviewProvider, options: ApiR
         message_template_2: body.message_template_2.trim(),
         message_template_3: body.message_template_3.trim(),
         status: body.status,
+        send_limit: body.send_limit ?? null,
+        send_window_hours: body.send_window_hours ?? null,
+        scheduled_start_at: body.scheduled_start_at ?? null,
+        scheduled_end_at: body.scheduled_end_at ?? null,
       },
       req.user.id,
       body.lead_ids?.length ? { leadIds: body.lead_ids } : body.lead_filter ? { filter: body.lead_filter } : undefined,
@@ -393,6 +412,10 @@ export function createApiRouter(db: DB, previews: PreviewProvider, options: ApiR
         message_template_2: body.message_template_2.trim(),
         message_template_3: body.message_template_3.trim(),
         status: body.status,
+        send_limit: body.send_limit ?? null,
+        send_window_hours: body.send_window_hours ?? null,
+        scheduled_start_at: body.scheduled_start_at ?? null,
+        scheduled_end_at: body.scheduled_end_at ?? null,
       });
     })();
     return ok(200, getCampaign(db, id));
@@ -437,6 +460,8 @@ export function createApiRouter(db: DB, previews: PreviewProvider, options: ApiR
 
   /** Dispatches a request. `path` is relative to /api (e.g. "/leads/3"). Throws HttpError. */
   function handle(method: string, path: string, query: Query, body: unknown, userId: unknown): ApiResult {
+    // Scheduled campaigns open/close on time (status only; nothing is sent automatically).
+    syncScheduledCampaigns(db);
     for (const r of routes) {
       if (r.method !== method) continue;
       const m = r.pattern.exec(path);

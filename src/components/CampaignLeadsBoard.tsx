@@ -51,7 +51,14 @@ export function CampaignLeadsBoard({ campaign, manage = false, onChanged }: Prop
     s === "" ? counts.data?.byStatus.reduce((a, b) => a + b.total, 0) ?? 0 : counts.data?.byStatus.find((b) => b.status === s)?.total ?? 0;
 
   const items = useMemo(() => data?.items ?? [], [data]);
-  const sendDisabled = campaign.status === "in_progress" ? null : campaign.status === "completed" ? "Campanha concluída" : "Inicie ou continue a campanha para enviar mensagens";
+  const sendDisabled =
+    campaign.status === "in_progress"
+      ? (campaign.rule?.blocked_reason ?? null)
+      : campaign.status === "completed"
+        ? "Campanha concluída"
+        : campaign.rule?.phase === "scheduled"
+          ? campaign.rule.blocked_reason
+          : "Inicie ou continue a campanha para enviar mensagens";
   const previewIndex = items.findIndex((l) => l.id === previewId);
   const previewLead = previewIndex >= 0 ? items[previewIndex] : null;
 
@@ -195,7 +202,7 @@ export function CampaignLeadsBoard({ campaign, manage = false, onChanged }: Prop
                         <IconButton label="Ver prévia" onClick={() => setPreviewId(lead.id)}>
                           <Eye size={15} />
                         </IconButton>
-                        <WhatsAppButton lead={lead} templates={[campaign.message_template, campaign.message_template_2, campaign.message_template_3]} campaignId={campaign.id} disabledReason={sendDisabled} size="xs" onOpened={(r) => afterOpen(lead.id, r.current)} />
+                        <WhatsAppButton lead={lead} templates={[campaign.message_template, campaign.message_template_2, campaign.message_template_3]} campaignId={campaign.id} disabledReason={sendDisabled} size="xs" onOpened={(r) => afterOpen(lead.id, r.current)} onFailed={onChanged} />
                         <ActionMenu label={`Mais ações: ${lead.establishment_name}`} items={leadMenu(lead)} />
                       </div>
                     </td>
@@ -224,7 +231,7 @@ export function CampaignLeadsBoard({ campaign, manage = false, onChanged }: Prop
                 </div>
                 <PresenceCell url={lead.digital_presence_url} type={lead.digital_presence_type} compact />
                 <div className="lc-actions">
-                  <WhatsAppButton lead={lead} templates={[campaign.message_template, campaign.message_template_2, campaign.message_template_3]} campaignId={campaign.id} disabledReason={sendDisabled} variant="block" onOpened={(r) => afterOpen(lead.id, r.current)} />
+                  <WhatsAppButton lead={lead} templates={[campaign.message_template, campaign.message_template_2, campaign.message_template_3]} campaignId={campaign.id} disabledReason={sendDisabled} variant="block" onOpened={(r) => afterOpen(lead.id, r.current)} onFailed={onChanged} />
                   <div className="lc-secondary">
                     <button className="btn secondary sm" onClick={() => setPreviewId(lead.id)}>
                       <Eye size={15} /> Ver prévia

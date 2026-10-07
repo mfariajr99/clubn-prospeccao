@@ -9,6 +9,7 @@ import { HttpError, notFound } from "../lib/http.js";
 import type { QuotaView } from "../../shared/sendQuota.js";
 import { buildCampaignMessage, buildWhatsAppUrl, pickTemplate } from "../../shared/template.js";
 import { consumeQuota, getQuota } from "./quota.js";
+import { assertCampaignCanSend } from "./campaignRules.js";
 
 export interface LeadFilter {
   q?: string;
@@ -329,6 +330,7 @@ export function registerWhatsAppOpened(
       if (cl.campaign_status !== "in_progress") {
         throw new HttpError(409, "A campanha precisa estar em andamento para registrar contatos.");
       }
+      assertCampaignCanSend(db, input.campaignId, nowDate);
       previous = cl.contact_status;
       current = previous === "not_contacted" ? "whatsapp_opened" : previous;
       db.prepare("UPDATE campaign_leads SET contact_status = ?, whatsapp_opened_at = ?, last_contact_at = ?, updated_at = ? WHERE id = ?").run(
@@ -376,6 +378,7 @@ export function prepareWhatsAppSend(
   if (input.campaignId) {
     const cl = getCampaignLead(db, input.campaignId, input.leadId);
     if (cl.campaign_status !== "in_progress") throw new HttpError(409, "A campanha precisa estar em andamento para enviar mensagens.");
+    assertCampaignCanSend(db, input.campaignId, input.now ?? new Date());
     const c = db.prepare("SELECT message_template, message_template_2, message_template_3 FROM campaigns WHERE id = ?").get(input.campaignId) as {
       message_template: string;
       message_template_2: string;

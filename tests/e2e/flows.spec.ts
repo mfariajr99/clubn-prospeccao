@@ -197,3 +197,70 @@ test("listagens responsivas", async ({ page }) => {
     }
   }
 });
+
+test("admin cria um novo usuário independente, que entra e começa do zero", async ({ page }) => {
+  const suffix = test.info().project.name;
+  await page.goto("/usuarios");
+  await expect(page.getByRole("heading", { name: "Novos usuários" })).toBeVisible();
+  await page.getByRole("button", { name: "Novo usuário" }).first().click();
+  await page.getByLabel(/Nome do cliente/).fill(`Agência Teste ${suffix}`);
+  await expect(page.getByLabel(/^Login/)).toHaveValue(`agencia.teste.${suffix}`);
+  await page.getByLabel(/^Senha/).fill("senha-teste-123");
+  await page.getByRole("button", { name: "Criar usuário" }).click();
+  await expect(page.getByTestId("client-credentials")).toContainText(`Login: agencia.teste.${suffix}`);
+  await page.getByRole("button", { name: "Concluir" }).click();
+  await expect(page.getByRole("link", { name: `Agência Teste ${suffix}` }).first()).toBeVisible();
+  await noHorizontalScroll(page);
+
+  // numbers-only detail page
+  await page.getByRole("link", { name: `Agência Teste ${suffix}` }).first().click();
+  await expect(page.getByText("Por privacidade, aqui aparecem só os números")).toBeVisible();
+  await noHorizontalScroll(page);
+
+  // the client logs in and sees an empty, isolated system without the admin area
+  const login = await page.request.post("/api/auth/login", { data: { login: `agencia.teste.${suffix}`, password: "senha-teste-123" } });
+  expect(login.ok()).toBeTruthy();
+  await page.goto("/campanhas");
+  await expect(page.getByText("Nenhuma campanha encontrada")).toBeVisible();
+  await expect(page.locator(".user-chip")).toContainText(`Agência Teste ${suffix}`);
+  await expect(page.locator("#operator")).toHaveCount(0);
+  if (isMobile(page)) await page.getByRole("button", { name: "Abrir menu" }).click();
+  await expect(page.getByRole("navigation", { name: "Menu principal" }).getByText("Novos usuários")).toHaveCount(0);
+  const admin = await page.request.get("/api/admin/clients");
+  expect(admin.status()).toBe(403);
+  await noHorizontalScroll(page);
+});
+
+test("tela Conexão WhatsApp: QR Code ou código de conexão por operador", async ({ page }) => {
+  await page.goto("/whatsapp");
+  await expect(page.getByRole("heading", { name: "Conexão WhatsApp" })).toBeVisible();
+  await expect(page.getByTestId("wa-pill")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Gerar QR Code/ })).toBeVisible();
+  await page.getByRole("tab", { name: /Código de conexão/ }).click();
+  await expect(page.getByLabel(/Número do WhatsApp/)).toBeVisible();
+  await expect(page.getByRole("button", { name: /Gerar código de conexão/ })).toBeVisible();
+  await noHorizontalScroll(page);
+});
+
+test("visão geral acompanha campanhas (semana e meta de 20%), regra de disparo, agendamento e Mensagens", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Acompanhamento das campanhas" })).toBeVisible();
+  await expect(page.getByTestId("kpi-week")).toBeVisible();
+  await expect(page.getByText(/Taxa de retorno · meta 20%/)).toBeVisible();
+  await expect(page.getByTestId("tracking-card").first()).toBeVisible();
+  await expect(page.getByText(/Agendada ·/).first()).toBeVisible();
+  await noHorizontalScroll(page);
+
+  await page.goto("/campanhas/nova");
+  await expect(page.getByLabel("Até quantas mensagens")).toHaveValue("30");
+  await expect(page.getByLabel("A cada (horas)")).toHaveValue("6");
+  await expect(page.getByTestId("rule-summary")).toContainText("Até 30 mensagens a cada 6 horas");
+  await page.getByLabel("Agendar o início desta campanha").check();
+  await expect(page.getByLabel(/^Início/)).toBeVisible();
+  await noHorizontalScroll(page);
+
+  await page.goto("/mensagens");
+  await expect(page.getByRole("heading", { name: "Mensagens" })).toBeVisible();
+  await expect(page.getByText("Nenhuma conversa ainda")).toBeVisible();
+  await noHorizontalScroll(page);
+});

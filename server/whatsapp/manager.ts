@@ -10,12 +10,13 @@ import path from "node:path";
 import QRCode from "qrcode";
 import type { WhatsAppStatus } from "../../shared/types.js";
 import { HttpError } from "../lib/http.js";
+import type { IncomingWaMessage } from "../services/inbox.js";
 
 export interface WaConnection {
   requestPairingCode(phoneDigits: string): Promise<string>;
   /** WhatsApp id (JID) of a phone number, or null when the number has no WhatsApp. */
   resolve(phoneDigits: string): Promise<string | null>;
-  sendText(jid: string, text: string): Promise<void>;
+  sendText(jid: string, text: string): Promise<{ id: string | null }>;
   logout(): Promise<void>;
   end(): void;
 }
@@ -24,7 +25,12 @@ export interface WaDriverEvents {
   onQr(qr: string): void;
   onOpen(me: { id: string; name?: string | null }): void;
   onClose(info: { loggedOut: boolean; restartRequired: boolean; code?: number; message?: string }): void;
+  /** Text messages received or sent (also from the phone), for "Mensagens". */
+  onMessages?(messages: IncomingWaMessage[]): void;
 }
+
+/** Where messages of a session are stored (session key -> workspace database). */
+export type MessageSink = (key: string, messages: IncomingWaMessage[]) => void;
 
 /** Starts one WhatsApp Web connection using the credentials stored in `authDir`. */
 export type WaDriver = (authDir: string, events: WaDriverEvents) => Promise<WaConnection>;
@@ -77,6 +83,11 @@ export const normalizePairingPhone = (phone: string) => phone.replace(/\D/g, "")
 
 export class WhatsAppManager {
   private sessions = new Map<string, Session>();
+  private sink: MessageSink | null = null;
+
+  setMessageSink(sink: MessageSink) {
+    this.sink = sink;
+  }
 
   constructor(
     private baseDir: string,
@@ -191,7 +202,7 @@ export class WhatsAppManager {
   }
 
   /** Sends ONE text message through the operator's connected WhatsApp. */
-  async send(key: string, phoneDigits: string, text: string): Promise<{ jid: string }> {
+  async send(key: string, phoneDigits: string, text: string): Promise<{ jid: string; id: string | null }> {
     const s = this.session(key);
     if (s.status.state !== "connected" && this.hasCredentials(s.dir)) {
       if (!s.conn) void this.start(s);
@@ -206,11 +217,20 @@ export class WhatsAppManager {
       const conn = s.conn;
       const jid = await withTimeout(conn.resolve(phoneDigits), SEND_TIMEOUT_MS, "O WhatsApp demorou para responder. Tente novamente.");
       if (!jid) throw new HttpError(422, "Este número não tem WhatsApp. Confira o cadastro do lead.");
-      await withTimeout(conn.sendText(jid, text), SEND_TIMEOUT_MS, "O WhatsApp demorou para confirmar o envio. Confira no celular antes de tentar de novo.");
-      return { jid };
+      const sent = await withTimeout(conn.sendText(jid, text), SEND_TIMEOUT_MS, "O WhatsApp demorou para confirmar o envio. Confira no celular antes de tentar de novo.");
+      return { jid, id: sent.id };
     } finally {
       s.sending = false;
     }
+  }
+
+  /** Answer inside an existing conversation ("Mensagens"). */
+  async reply(key: string, chatJid: string, text: string): Promise<{ id: string | null }> {
+    const s = this.session(key);
+    if (s.status.state !== "connected" || !s.conn) {
+      throw new HttpError(409, "Seu WhatsApp não está conectado. Conecte em “Conexão WhatsApp” para responder.", { code: "WA_NOT_CONNECTED" });
+    }
+    return withTimeout(s.conn.sendText(chatJid, text), SEND_TIMEOUT_MS, "O WhatsApp demorou para confirmar o envio. Confira no celular.");
   }
 
   shutdown() {
@@ -284,6 +304,14 @@ export class WhatsAppManager {
               if (current()) this.set(s, { state: "qr", qr: dataUrl, pairing_code: null, error: null });
             })
             .catch(() => undefined);
+        },
+        onMessages: (messages) => {
+          if (!current() || !this.sink || !messages.length) return;
+          try {
+            this.sink(s.key, messages);
+          } catch (e) {
+            this.log(`WhatsApp ${s.key}: falha ao guardar mensagens (${(e as Error).message})`);
+          }
         },
         onOpen: (me) => {
           if (!current()) return;

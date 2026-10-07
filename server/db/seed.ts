@@ -189,6 +189,15 @@ export function seed(db: DB, reset = false): void {
     link(done, ids[4], "message_sent", 7);
     for (const id of importedIds) link(importedCampaign, id);
 
+    // Dispatch rules and a scheduled campaign (opens tomorrow at 09:00 Brasília = 12:00 UTC).
+    db.prepare("UPDATE campaigns SET send_limit = 30, send_window_hours = 6 WHERE id IN (?, ?)").run(running, draft);
+    db.prepare("UPDATE campaigns SET send_limit = 20, send_window_hours = 24 WHERE id = ?").run(done);
+    db.prepare(
+      `UPDATE campaigns SET send_limit = 15, send_window_hours = 6,
+        scheduled_start_at = strftime('%Y-%m-%dT12:00:00.000Z', 'now', '+1 day'),
+        scheduled_end_at = strftime('%Y-%m-%dT21:00:00.000Z', 'now', '+8 days') WHERE id = ?`,
+    ).run(importedCampaign);
+
     // Manual evaluations (general + one campaign-specific)
     const evaluate = (lead: number, level: string, score: number, campaign: number | null, notes: string) =>
       db

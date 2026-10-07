@@ -7,6 +7,15 @@ import os from "node:os";
 import { WhatsAppManager } from "./whatsapp/manager.js";
 import { baileysDriver } from "./whatsapp/baileysDriver.js";
 
+// A failure inside the WhatsApp connection (network drop, WhatsApp closing the
+// socket...) must never take the whole system down: log it and keep serving.
+process.on("unhandledRejection", (reason) => {
+  console.error("[erro não tratado]", reason);
+});
+process.on("uncaughtException", (error) => {
+  console.error("[exceção não tratada]", error);
+});
+
 const db = openDatabase(defaultDbFile());
 runMigrations(db);
 ensureDefaultUser(db);

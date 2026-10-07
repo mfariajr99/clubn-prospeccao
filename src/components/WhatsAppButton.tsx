@@ -20,6 +20,8 @@ interface Props {
   variant?: "button" | "icon" | "block";
   size?: "sm" | "xs";
   onOpened?: (result: { previous: ContactStatus; current: ContactStatus; opened_at: string }) => void;
+  /** Called when the send was refused (e.g. campaign rule reached) so the screen can refresh. */
+  onFailed?: () => void;
 }
 
 /**
@@ -29,7 +31,7 @@ interface Props {
  * - not connected: opens WhatsApp (wa.me) with the message filled in and only
  *   records "WhatsApp aberto" — it never claims the message was sent.
  */
-export function WhatsAppButton({ lead, templates, campaignId, disabledReason: externalReason, variant = "button", size = "sm", onOpened }: Props) {
+export function WhatsAppButton({ lead, templates, campaignId, disabledReason: externalReason, variant = "button", size = "sm", onOpened, onFailed }: Props) {
   const toast = useToast();
   const navigate = useNavigate();
   const label = "Enviar mensagem";
@@ -68,6 +70,7 @@ export function WhatsAppButton({ lead, templates, campaignId, disabledReason: ex
         if (q) quota.apply(q);
         else quota.refresh();
         toast.error(`WhatsApp aberto, mas o envio não foi registrado: ${errorMessage(e)}`);
+        onFailed?.();
       });
   };
 
@@ -93,6 +96,7 @@ export function WhatsAppButton({ lead, templates, campaignId, disabledReason: ex
       } else {
         toast.error(`Mensagem não enviada: ${errorMessage(e)}`);
       }
+      onFailed?.();
     } finally {
       setSending(false);
     }

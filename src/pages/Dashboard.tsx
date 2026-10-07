@@ -5,6 +5,7 @@ import { POTENTIAL_LABELS } from "../../shared/constants";
 import type { DashboardMetrics } from "../../shared/types";
 import { CampaignBadge, EmptyState, SkeletonRows } from "../components/ui";
 import { useAsync } from "../hooks/useAsync";
+import { CampaignTrackingPanel } from "../components/CampaignTrackingPanel";
 import { api } from "../lib/api";
 import { fmtNumber, pct } from "../lib/format";
 
@@ -29,7 +30,7 @@ function Stat({ icon, label, value, caption, to }: { icon: ReactNode; label: str
 }
 
 export default function Dashboard() {
-  const { data: m, loading, error } = useAsync((s) => api.get<DashboardMetrics>("/dashboard", undefined, s), []);
+  const { data: m, loading, error, reload } = useAsync((s) => api.get<DashboardMetrics>("/dashboard", undefined, s), []);
 
   if (loading && !m) return <SkeletonRows rows={6} height={90} />;
   if (error || !m) return <div className="notice danger">{error ?? "Não foi possível carregar as métricas."}</div>;
@@ -72,6 +73,7 @@ export default function Dashboard() {
         </div>
       ) : (
         <>
+          {m.tracking && <CampaignTrackingPanel tracking={m.tracking} onChanged={reload} />}
           <section className="hero" aria-label="Leads contatados">
             <div>
               <div className="hero-label">Leads contatados</div>
